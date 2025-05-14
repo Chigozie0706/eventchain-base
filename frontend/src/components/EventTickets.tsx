@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
-import { useReadContract, useWriteContract } from "wagmi";
+import { useReadContract, useWriteContract, useAccount } from "wagmi";
 import { MapPin, Calendar, Flag, DollarSign } from "lucide-react";
 import { toast } from "react-hot-toast";
 import contractABI from "../contract/abi.json";
@@ -26,6 +26,7 @@ interface Event {
   isCanceled: boolean;
   fundsReleased: boolean;
   paymentToken: string;
+  tokenSymbol: string;
 }
 
 // Expanded token information including decimals
@@ -40,6 +41,7 @@ const SUPPORTED_TOKENS: Record<string, { symbol: string; decimals: number }> = {
 export default function EventTickets() {
   const [events, setEvents] = useState<Event[]>([]);
   const { writeContractAsync, isPending: isWriting } = useWriteContract();
+  const { address } = useAccount();
 
   const {
     data,
@@ -52,6 +54,7 @@ export default function EventTickets() {
     address: CONTRACT_ADDRESS,
     abi: contractABI.abi,
     functionName: "getUserEvents",
+    account: address,
   });
 
   useEffect(() => {
@@ -208,11 +211,17 @@ export default function EventTickets() {
                           <span className="text-sm">{event.eventLocation}</span>
                         </div>
 
-                        <div className="flex items-start gap-2">
+                        {/* <div className="flex items-start gap-2">
                           <DollarSign className="w-4 h-4 mt-0.5 text-gray-500 flex-shrink-0" />
                           <span className="text-sm">
                             {event.ticketPrice.toFixed(2)}
-                            {/* {event.tokenSymbol} */}
+                             {event.paymentToken}
+                          </span>
+                        </div> */}
+
+                        <div className="flex items-start gap-2">
+                          <span className="text-sm">
+                            {event.ticketPrice.toFixed(2)} {event.tokenSymbol}
                           </span>
                         </div>
 
