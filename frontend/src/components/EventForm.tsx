@@ -24,27 +24,27 @@ interface EventData {
 }
 
 // Update with your deployed contract address on Base
-const CONTRACT_ADDRESS = "0xc153E9A4A58324713e9575CE2918C58719A757Cc";
+const CONTRACT_ADDRESS = "0xb3972Ca9d6BD396CE0C1Cc2065bBb386f9892474";
 
 // Base network token options (mainnet and testnet)
-const BASE_TOKENS = {
-  // Mainnet tokens
-  mainnet: [
-    { symbol: "USDC", address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },
-    { symbol: "WETH", address: "0x4200000000000000000000000000000000000006" },
-    { symbol: "DAI", address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb" },
-  ],
-  // Testnet tokens (Base Sepolia)
-  testnet: [
-    { symbol: "USDC", address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" },
-    { symbol: "WETH", address: "0x4200000000000000000000000000000000000006" },
-  ],
-};
+// const BASE_TOKENS = {
+//   // Mainnet tokens
+//   mainnet: [
+//     { symbol: "USDC", address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },
+//     { symbol: "WETH", address: "0x4200000000000000000000000000000000000006" },
+//     { symbol: "DAI", address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb" },
+//   ],
+//   // Testnet tokens (Base Sepolia)
+//   testnet: [
+//     { symbol: "USDC", address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" },
+//     { symbol: "WETH", address: "0x4200000000000000000000000000000000000006" },
+//   ],
+// };
 
 const tokenOptions = [
   {
     symbol: "USDC",
-    address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     decimals: 6,
   },
   {

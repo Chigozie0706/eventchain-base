@@ -57,7 +57,7 @@ export default function EventPage({
 
   const SUPPORTED_TOKENS: Record<string, { symbol: string; decimals: number }> =
     {
-      "0x036CbD53842c5426634e7929541eC2318f3dCF7e": {
+      "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": {
         symbol: "USDC",
         decimals: 6, // USDC uses 6 decimals
       },

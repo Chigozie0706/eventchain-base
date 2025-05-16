@@ -7,7 +7,7 @@ import { MapPin, Calendar, Flag, DollarSign } from "lucide-react";
 import { toast } from "react-hot-toast";
 import contractABI from "../contract/abi.json";
 
-const CONTRACT_ADDRESS = "0xc153E9A4A58324713e9575CE2918C58719A757Cc";
+const CONTRACT_ADDRESS = "0xb3972Ca9d6BD396CE0C1Cc2065bBb386f9892474";
 
 interface Event {
   id: string;
@@ -31,7 +31,7 @@ interface Event {
 
 // Expanded token information including decimals
 const SUPPORTED_TOKENS: Record<string, { symbol: string; decimals: number }> = {
-  "0x036CbD53842c5426634e7929541eC2318f3dCF7e": { symbol: "USDC", decimals: 6 },
+  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": { symbol: "USDC", decimals: 6 },
   "0x4200000000000000000000000000000000000006": {
     symbol: "WETH",
     decimals: 18,

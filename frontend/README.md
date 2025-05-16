@@ -2,10 +2,9 @@
 
 [![Next.js](https://img.shields.io/badge/Next.js-13+-blue)](https://nextjs.org/)  
 [![TypeScript](https://img.shields.io/badge/TypeScript-✔️-blue)](https://www.typescriptlang.org/)  
-[![Celo Blockchain](https://img.shields.io/badge/Celo-Blockchain-yellow)](https://celo.org/)  
-[![Smart Contracts](https://img.shields.io/badge/Smart_Contracts-Solidity-orange)](https://soliditylang.org/)
+ [![Smart Contracts](https://img.shields.io/badge/Smart_Contracts-Solidity-orange)](https://soliditylang.org/)
 
-**EventChain** is a decentralized event ticketing platform powered by **Next.js** and **Celo blockchain**. It allows users to **create events, buy tickets, and request refunds** while ensuring **transparency and security** via smart contracts.
+**EventChain** is a decentralized event ticketing platform powered by **Next.js** and **Base network**. It allows users to **create events, buy tickets, and request refunds** while ensuring **transparency and security** via smart contracts.
 
 **[Live Demo](https://eventchain-git-main-chigozie0706s-projects.vercel.app/)**  
 **[Backend Repository](../backend/)**
@@ -15,9 +14,9 @@
 ## **Features**
 
 **Decentralized Ticketing** – Tickets are securely recorded on the blockchain.  
-**Multi-Token Payments** – Supports **cUSD, cEUR, cREAL**, and more.  
+**Multi-Token Payments** – Supports **USDC, WETH**, and more.  
 **Refund Mechanism** – Users can get refunds in case of event cancellations.  
-**Blockchain-Powered Transparency** – All transactions are visible on **Celo Explorer**.  
+**Blockchain-Powered Transparency** – All transactions are visible on **basescan**.  
 **Smart Contract-Based Security** – No centralized authority, reducing fraud risks.
 
 ---
@@ -66,7 +65,6 @@ Ensure you have the following installed:
 - **[Node.js](https://nodejs.org/)** (v16+ recommended)
 - **[pnpm](https://pnpm.io/)** (or npm/yarn)
 - **[Metamask](https://metamask.io/)** browser extension
-- A **Celo wallet**
 
 ### **2 Clone the Repository**
 
@@ -91,19 +89,6 @@ Your application will be available at **[http://localhost:3000](http://localhost
 
 ---
 
-## **Smart Contract Integration**
-
-The frontend interacts with **Celo smart contracts** via the **ContractContext.tsx** file. It uses the **Web3.js** or **Ethers.js** library to:
-
-- Fetch event data from the blockchain
-- Process ticket purchases
-- Handle refunds
-
-**Key File:** [`ContractContext.tsx`](src/context/ContractContext.tsx)  
-**ABI File:** [`abi.json`](src/contract/abi.json)
-
----
-
 ## **Deployment**
 
 The frontend is deployed on **Vercel**.
@@ -113,7 +98,6 @@ The frontend is deployed on **Vercel**.
 ## **Additional Resources**
 
 - [Next.js Documentation](https://nextjs.org/docs)
-- [Celo Developer Docs](https://docs.celo.org/)
 - [EventChain Backend Repository](../backend/)
 
 ---
