@@ -23,10 +23,17 @@ interface CreatorEventCardProps {
   cancelLoading: boolean;
 }
 
-const mentoTokens: Record<string, string> = {
-  "0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1": "cUSD",
-  "0x10c892A6EC43a53E45D0B916B4b7D383B1b78C0F": "cEUR",
-  "0xE4D517785D091D3c54818832dB6094bcc2744545": "cCOP",
+// Base Mainnet token addresses
+const BASE_TOKENS: Record<string, { symbol: string; decimals: number }> = {
+  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": { symbol: "USDC", decimals: 6 }, // Base USDC
+  "0x4200000000000000000000000000000000000006": {
+    symbol: "WETH",
+    decimals: 18,
+  }, // Wrapped Ether
+  "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA": {
+    symbol: "USDbC",
+    decimals: 6,
+  }, // USD Base Coin
 };
 
 const CreatorEventCard: React.FC<CreatorEventCardProps> = ({
@@ -36,15 +43,27 @@ const CreatorEventCard: React.FC<CreatorEventCardProps> = ({
   loading,
   cancelLoading,
 }) => {
-  const formatTicketPrice = (price: number) => {
-    if (price < 1e18) {
-      return price.toFixed(2);
-    }
-    return (price / 1e18).toFixed(2);
+  // Format price with correct decimals
+  const formatTicketPrice = (price: number, tokenAddress: string) => {
+    const tokenInfo = BASE_TOKENS[tokenAddress] || {
+      symbol: "TOK",
+      decimals: 18,
+    };
+    const formatted = price / Math.pow(10, tokenInfo.decimals);
+    return formatted.toFixed(tokenInfo.decimals > 4 ? 4 : 2);
   };
 
-  const formattedTicketPrice = formatTicketPrice(event.ticketPrice);
-  const tokenSymbol = mentoTokens[event.paymentToken] || event.paymentToken;
+  const tokenInfo = BASE_TOKENS[event.paymentToken] || {
+    symbol: `${event.paymentToken.slice(0, 4)}...${event.paymentToken.slice(
+      -4
+    )}`,
+    decimals: 18,
+  };
+
+  const formattedTicketPrice = formatTicketPrice(
+    event.ticketPrice,
+    event.paymentToken
+  );
 
   // Format date and time
   const formattedStartDate = new Date(
@@ -95,7 +114,7 @@ const CreatorEventCard: React.FC<CreatorEventCardProps> = ({
 
         {/* Delete Button */}
         <button
-          // onClick={() => onDelete(event.index)}
+          onClick={() => onDelete(event.index)}
           disabled={loading}
           className="bg-red-500 text-white p-2 rounded-full shadow-md hover:bg-red-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
           aria-label="Delete event"
@@ -191,7 +210,11 @@ const CreatorEventCard: React.FC<CreatorEventCardProps> = ({
         <div className="pt-2 flex justify-between items-center">
           <span
             className={`text-sm font-medium ${
-              event.isActive ? "text-green-500" : "text-red-500"
+              event.isCanceled
+                ? "text-red-500"
+                : event.isActive
+                ? "text-green-500"
+                : "text-gray-500"
             }`}
           >
             {event.isCanceled
@@ -201,7 +224,7 @@ const CreatorEventCard: React.FC<CreatorEventCardProps> = ({
               : "Inactive"}
           </span>
           <span className="text-sm font-semibold text-gray-900">
-            {formattedTicketPrice} {tokenSymbol}
+            {formattedTicketPrice} {tokenInfo.symbol}
           </span>
         </div>
       </div>

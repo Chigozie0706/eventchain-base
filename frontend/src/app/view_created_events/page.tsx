@@ -115,7 +115,7 @@ export default function MyEvents() {
           endTime: Number(event.endTime),
           eventLocation: event.eventLocation,
           isActive: event.isActive,
-          ticketPrice: Number(ethers.formatUnits(event.ticketPrice, 18)),
+          ticketPrice: Number(event.ticketPrice),
           fundsHeld: Number(ethers.formatUnits(event.fundsHeld, 18)),
           isCanceled: event.isCanceled,
           fundsReleased: event.fundsReleased,
