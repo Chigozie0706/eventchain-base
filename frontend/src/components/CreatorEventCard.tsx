@@ -1,4 +1,5 @@
-import { Trash2, XCircle } from "lucide-react";
+import { Trash2, XCircle, Eye } from "lucide-react";
+import Link from "next/link";
 
 interface CreatorEventCardProps {
   event: {
@@ -100,6 +101,15 @@ const CreatorEventCard: React.FC<CreatorEventCardProps> = ({
     >
       {/* Action Buttons */}
       <div className="absolute top-3 right-3 flex gap-2">
+        <Link href={`/view_event_details/${event.index}`} passHref>
+          <button
+            className="bg-blue-500 text-white p-2 rounded-full shadow-md hover:bg-blue-600 transition"
+            aria-label="View event details"
+          >
+            <Eye size={16} />
+          </button>
+        </Link>
+
         {/* Cancel Button */}
         {event.isActive && !event.isCanceled && (
           <button
@@ -113,14 +123,14 @@ const CreatorEventCard: React.FC<CreatorEventCardProps> = ({
         )}
 
         {/* Delete Button */}
-        <button
+        {/* <button
           onClick={() => onDelete(event.index)}
           disabled={loading}
           className="bg-red-500 text-white p-2 rounded-full shadow-md hover:bg-red-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
           aria-label="Delete event"
         >
           <Trash2 size={16} />
-        </button>
+        </button> */}
       </div>
 
       {/* Canceled Badge */}
