@@ -15,6 +15,7 @@ A **decentralized event ticketing platform** built on the **Base network**, allo
 **Refund System** – Request refunds in the same token used for payment if an event is canceled.  
 **Event Management** – Organizers can create, update, and deactivate events.  
 **Base Integration** – Uses USDC, WETH on Base for payments and event validation.
+**Wallet Integration** - (Reown AppKit) – Connect via email or 300+ crypto wallets seamlessly.
 
 ---
 
@@ -122,14 +123,45 @@ pnpm run dev   # Runs the Next.js app on http://localhost:3000
 
 ---
 
-### **Architecture**
-
 #### **Tech Stack**
 
 - **Frontend:** Next.js (React + TypeScript)
 - **Backend:** Solidity smart contract (Hardhat, Hardhat Ignition)
 - **Blockchain:** Base
-- **Wallet Integration:** MetaMask, Celo Extension Wallet
+- **Wallet Integration:** Reown AppKit + wagmi
+
+## **🪙 Wallet Integration (Reown AppKit)**
+
+EventChain now uses **[Reown AppKit](https://reown.io)** for wallet connection — providing a **professional**, **mobile-friendly**, and **inclusive** Web3 experience.
+
+### **Why Reown AppKit?**
+
+| Feature                         | Description                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------- |
+| 🔗 **Universal Wallet Support** | Connect with MetaMask, Coinbase Wallet, Trust Wallet, Rainbow, and 300+ others. |
+| 📧 **Email Login**              | Onboard users via email — no seed phrases needed.                               |
+| 📱 **Mobile-Optimized**         | QR codes, deep links, and mobile UX built-in.                                   |
+| 🌍 **Multi-Language Support**   | Reach diverse communities across Africa.                                        |
+| ⚡ **Low Bandwidth Mode**       | Optimized for users with limited internet connectivity.                         |
+
+### **Configuration**
+
+**Installed Packages**
+
+```json
+{
+  "@reown/appkit": "^1.8.12",
+  "@reown/appkit-adapter-wagmi": "^1.8.12",
+  "wagmi": "^2.x",
+  "viem": "^2.x"
+}
+```
+
+**WalletConnect Project ID:**
+
+```
+b2086c0b61d1965614aefb4fb914a316
+```
 
 #### **Challenges & Implementation Notes**
 

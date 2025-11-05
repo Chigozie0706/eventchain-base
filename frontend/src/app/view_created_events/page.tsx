@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import CreatorEventCard from "@/components/CreatorEventCard";
 import {
   useReadContract,
@@ -7,10 +7,13 @@ import {
   useAccount,
   useWaitForTransactionReceipt,
   useBlockNumber,
+  useWalletClient,
 } from "wagmi";
 import contractABI from "../../contract/abi.json";
 import { toast } from "react-hot-toast";
 import { ethers } from "ethers";
+import { getReferralTag, submitReferral } from "@divvi/referral-sdk";
+import { encodeFunctionData } from "viem";
 
 interface Event {
   index: number;
@@ -31,7 +34,7 @@ interface Event {
   paymentToken: string;
 }
 
-const CONTRACT_ADDRESS = "0xb3972Ca9d6BD396CE0C1Cc2065bBb386f9892474";
+const CONTRACT_ADDRESS = "0x6A48892DCba94f55c4107e3c429F0b85C9A49756";
 
 export default function MyEvents() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -41,10 +44,17 @@ export default function MyEvents() {
   const { address: connectedAddress } = useAccount();
   const [cancelingId, setCancelingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const { data: walletClient } = useWalletClient();
 
   // Add this hook for transaction tracking
   const { data: hash, isPending: isWriting } = useWriteContract();
   const { data: blockNumber } = useBlockNumber({ watch: true });
+
+  // Divvi configuration
+  const DIVVI_CONFIG = {
+    user: connectedAddress as `0x${string}`,
+    consumer: "0x5e23d5Be257d9140d4C5b12654111a4D4E18D9B2" as `0x${string}`,
+  };
 
   const { isLoading: isConfirming, isSuccess: isConfirmed } =
     useWaitForTransactionReceipt({ hash });
@@ -62,6 +72,18 @@ export default function MyEvents() {
     functionName: "getActiveEventsByCreator",
     account: connectedAddress,
   });
+
+  const reportToDivvi = async (txHash: `0x${string}`) => {
+    console.log("[Divvi] Starting to report transaction:", txHash);
+    try {
+      const chainId = 42220; // Celo mainnet
+      console.log("[Divvi] Using chainId:", chainId);
+      await submitReferral({ txHash, chainId });
+      console.log("[Divvi] Successfully reported transaction");
+    } catch (divviError) {
+      console.error("[Divvi] Reporting failed:", divviError);
+    }
+  };
 
   useEffect(() => {
     if (isLoading) {
@@ -86,7 +108,7 @@ export default function MyEvents() {
   useEffect(() => {
     if (isSuccess && data) {
       try {
-        console.log("ℹ️ Raw creator events data received:", {
+        console.log(" Raw creator events data received:", {
           data,
           timestamp: new Date().toISOString(),
         });
@@ -97,7 +119,7 @@ export default function MyEvents() {
 
         const [indexes, eventData] = data as [bigint[], any[]];
 
-        console.log("ℹ️ Processing creator events data...", {
+        console.log(" Processing creator events data...", {
           indexesCount: indexes.length,
           eventsCount: eventData.length,
           timestamp: new Date().toISOString(),
@@ -115,7 +137,7 @@ export default function MyEvents() {
           endTime: Number(event.endTime),
           eventLocation: event.eventLocation,
           isActive: event.isActive,
-          ticketPrice: Number(event.ticketPrice),
+          ticketPrice: Number(ethers.formatUnits(event.ticketPrice, 18)),
           fundsHeld: Number(ethers.formatUnits(event.fundsHeld, 18)),
           isCanceled: event.isCanceled,
           fundsReleased: event.fundsReleased,
@@ -146,7 +168,7 @@ export default function MyEvents() {
     refetch();
   }, [blockNumber, refetch]);
 
-  const cancelEvent = async (eventId: number) => {
+  const cancelEvent1 = async (eventId: number) => {
     setCancelingId(eventId);
     const toastId = toast.loading("Canceling event...");
     try {
@@ -176,6 +198,76 @@ export default function MyEvents() {
       setCancelingId(null);
     }
   };
+
+  const cancelEvent = useCallback(
+    async (eventId: number) => {
+      console.log("[Cancel] Starting event cancellation process");
+
+      if (!connectedAddress || !walletClient) {
+        console.log("[Cancel] Wallet not connected - aborting");
+        toast.error("Please connect your wallet first");
+        return;
+      }
+
+      setCancelingId(eventId);
+      const toastId = toast.loading("Preparing cancellation...");
+
+      try {
+        // Get Divvi data suffix
+        console.log("[Cancel] Generating Divvi suffix");
+        const divviSuffix = getReferralTag(DIVVI_CONFIG);
+        console.log("[Cancel] Divvi suffix generated:", divviSuffix);
+
+        // Encode the cancelEvent function call
+        console.log("[Cancel] Encoding cancelEvent function");
+        const encodedFunction = encodeFunctionData({
+          abi: contractABI.abi,
+          functionName: "cancelEvent",
+          args: [eventId],
+        });
+        console.log("[Cancel] Encoded function:", encodedFunction);
+
+        // Combine with Divvi suffix
+        const dataWithDivvi = (encodedFunction +
+          (divviSuffix.startsWith("0x")
+            ? divviSuffix.slice(2)
+            : divviSuffix)) as `0x${string}`;
+        console.log("[Cancel] Final transaction data:", dataWithDivvi);
+
+        toast.loading("Waiting for wallet confirmation...", { id: toastId });
+
+        // Send transaction with Divvi data
+        console.log("[Cancel] Sending transaction to wallet");
+        const hash = await walletClient.sendTransaction({
+          account: connectedAddress,
+          to: CONTRACT_ADDRESS,
+          data: dataWithDivvi,
+        });
+        console.log("[Cancel] Transaction submitted, hash:", hash);
+
+        toast.success("Cancellation submitted!", { id: toastId });
+
+        // Report to Divvi
+        console.log("[Cancel] Reporting to Divvi");
+        await reportToDivvi(hash);
+        console.log("[Cancel] Event cancellation process completed");
+
+        // Force a refresh after a short delay to account for block confirmation
+        setTimeout(() => {
+          refetch();
+        }, 5000);
+      } catch (error: any) {
+        console.error("[Cancel] Transaction failed:", {
+          error: error.message,
+          stack: error.stack,
+        });
+        toast.error(error.message || "Failed to cancel event");
+      } finally {
+        setCancelingId(null);
+      }
+    },
+    [connectedAddress, walletClient, refetch]
+  );
 
   const deleteEvent = async (eventId: number) => {
     const toastId = toast.loading("Deleting event...");

@@ -26,7 +26,7 @@ interface CreatorEventCardProps {
 
 // Base Mainnet token addresses
 const BASE_TOKENS: Record<string, { symbol: string; decimals: number }> = {
-  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": { symbol: "USDC", decimals: 6 }, // Base USDC
+  "0x8a21CF9Ba08Ae709D64Cb25AfAA951183EC9FF6D": { symbol: "Lisk", decimals: 6 }, // Base USDC
   "0x4200000000000000000000000000000000000006": {
     symbol: "WETH",
     decimals: 18,

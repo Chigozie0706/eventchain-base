@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Menu, X, ChevronDown } from "lucide-react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAccount } from "wagmi";
+import "@reown/appkit-wallet-button/react";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -147,11 +148,7 @@ export default function Navbar() {
 
         {/* RainbowKit Connect Button - Always Visible */}
         <div className="ml-2">
-          <ConnectButton
-            showBalance={false}
-            chainStatus="none"
-            accountStatus="address"
-          />
+          <appkit-button />
         </div>
       </div>
     </nav>

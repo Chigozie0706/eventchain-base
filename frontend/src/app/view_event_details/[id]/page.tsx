@@ -8,10 +8,13 @@ import {
   useReadContract,
   useWriteContract,
   useWaitForTransactionReceipt,
+  useWalletClient,
+  useBalance,
 } from "wagmi";
+import { getReferralTag, submitReferral } from "@divvi/referral-sdk";
 import contractABI from "../../../contract/abi.json";
 import EventPage from "@/components/EventPage";
-import { erc20Abi } from "viem";
+import { erc20Abi, encodeFunctionData, encodeAbiParameters } from "viem";
 
 export interface Event {
   owner: string;
@@ -27,12 +30,13 @@ export interface Event {
   ticketPrice: bigint;
   fundsHeld: number;
   isCanceled: boolean;
+  minimumAge: number;
   fundsReleased: boolean;
   paymentToken: string;
 }
 
-// Update with your deployed contract address on Base
-const CONTRACT_ADDRESS = "0xb3972Ca9d6BD396CE0C1Cc2065bBb386f9892474";
+const CONTRACT_ADDRESS = "0x4d076657405ec101Ee546f81BCc818abE83e31f3";
+const CELO_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
@@ -44,6 +48,18 @@ export default function Home() {
   const { id } = useParams<{ id: string }>();
   const eventId = id ? BigInt(id) : BigInt(0);
   const { address, isConnected } = useAccount();
+  const { data: walletClient } = useWalletClient();
+
+  const DIVVI_CONFIG = {
+    user: address as `0x${string}`,
+    consumer: "0x5e23d5Be257d9140d4C5b12654111a4D4E18D9B2" as `0x${string}`,
+  };
+
+  // Add CELO balance check
+  const { data: celoBalance } = useBalance({
+    address: address,
+    query: { enabled: !!address },
+  });
 
   // Contract data fetching with refetch capability
   const {
@@ -74,7 +90,13 @@ export default function Home() {
     abi: erc20Abi,
     functionName: "balanceOf",
     args: [address!],
-    query: { enabled: !!address && !!eventDetails?.event.paymentToken },
+    query: {
+      enabled:
+        !!address &&
+        !!eventDetails?.event.paymentToken &&
+        eventDetails.event.paymentToken !== CELO_TOKEN_ADDRESS,
+    },
+    // query: { enabled: !!address && !!eventDetails?.event.paymentToken },
   });
 
   // Token allowance check
@@ -83,7 +105,13 @@ export default function Home() {
     abi: erc20Abi,
     functionName: "allowance",
     args: [address!, CONTRACT_ADDRESS],
-    query: { enabled: !!address && !!eventDetails?.event.paymentToken },
+    query: {
+      enabled:
+        !!address &&
+        !!eventDetails?.event.paymentToken &&
+        eventDetails.event.paymentToken !== CELO_TOKEN_ADDRESS,
+    },
+    // query: { enabled: !!address && !!eventDetails?.event.paymentToken },
   });
 
   // Refund transaction handling
@@ -114,7 +142,6 @@ export default function Home() {
     refetchAllowance,
   ]);
 
-  // Process event data when fetched
   useEffect(() => {
     if (rawData) {
       const [eventData, attendees, relatedEvents] = rawData as any;
@@ -132,6 +159,7 @@ export default function Home() {
           isActive: eventData.isActive,
           ticketPrice: eventData.ticketPrice,
           fundsHeld: eventData.fundsHeld,
+          minimumAge: eventData.minimumAge,
           isCanceled: eventData.isCanceled,
           fundsReleased: eventData.fundsReleased,
           paymentToken: eventData.paymentToken,
@@ -142,8 +170,6 @@ export default function Home() {
     }
   }, [rawData]);
 
-  console.log("eventDetails", eventDetails);
-  // Purchase status handling
   useEffect(() => {
     let toastId: string | undefined;
 
@@ -188,20 +214,41 @@ export default function Home() {
     refundWriteError,
   ]);
 
+  const reportToDivvi = async (txHash: `0x${string}`) => {
+    console.log("[Divvi] Starting to report transaction:", txHash);
+    try {
+      const chainId = 8453; // Celo mainnet
+      console.log("[Divvi] Using chainId:", chainId);
+      await submitReferral({ txHash, chainId });
+      console.log("[Divvi] Successfully reported transaction");
+    } catch (divviError) {
+      console.error("[Divvi] Reporting failed:", divviError);
+    }
+  };
+
   const buyTicket = useCallback(async () => {
+    console.log("[Ticket] Starting ticket purchase process");
+
     // Check if wallet is connected
     if (!isConnected) {
+      console.log("[Ticket] Wallet not connected - aborting");
       toast.error("Please connect your wallet first");
       return;
     }
 
-    if (!eventDetails || !address) {
+    if (!eventDetails || !address || !walletClient) {
+      console.log("[Ticket] Missing required data - aborting", {
+        eventDetails: !!eventDetails,
+        address: !!address,
+        walletClient: !!walletClient,
+      });
       toast.error("Wallet not properly connected");
       return;
     }
 
     // Check if user already has a ticket
     if (eventDetails.attendees.includes(address)) {
+      console.log("[Ticket] User already has ticket", { user: address });
       toast.error("You already have a ticket for this event");
       return;
     }
@@ -211,63 +258,265 @@ export default function Home() {
       tokenBalance !== undefined &&
       tokenBalance < eventDetails.event.ticketPrice
     ) {
+      console.log("[Ticket] Insufficient balance", {
+        balance: tokenBalance.toString(),
+        required: eventDetails.event.ticketPrice.toString(),
+      });
       toast.error("Insufficient token balance");
       return;
     }
 
     try {
-      const requiredAllowance = eventDetails.event.ticketPrice;
-      if (!tokenAllowance || tokenAllowance < requiredAllowance) {
-        await write({
-          address: eventDetails.event.paymentToken as `0x${string}`,
-          abi: erc20Abi,
-          functionName: "approve",
-          args: [CONTRACT_ADDRESS, requiredAllowance],
+      setLoading(true);
+      console.log("[Ticket] Starting transaction flow");
+      const toastId = toast.loading("Preparing transaction...");
+
+      const requiredAmount = eventDetails.event.ticketPrice;
+      const paymentToken = eventDetails.event.paymentToken;
+      const isGdollar =
+        paymentToken.toLowerCase() ===
+        "0x62b8b11039fcfe5ab0c56e502b1c372a3d2a9c7a";
+      const isCelo = paymentToken === CELO_TOKEN_ADDRESS;
+
+      console.log("[Ticket] Payment token:", paymentToken, "is G$:", isGdollar);
+
+      // Check balance - different logic for CELO vs ERC20
+      // if (isCelo) {
+      //   if (!celoBalance || celoBalance.value < requiredAmount) {
+      //     toast.error("Insufficient CELO balance");
+      //     setLoading(false);
+      //     return;
+      //   }
+      // } else {
+      //   if (tokenBalance !== undefined && tokenBalance < requiredAmount) {
+      //     toast.error("Insufficient token balance");
+      //     setLoading(false);
+      //     return;
+      //   }
+      // }
+
+      // Get Divvi data suffix
+      console.log("[Ticket] Generating Divvi suffix");
+      const divviSuffix = getReferralTag(DIVVI_CONFIG);
+      console.log("[Ticket] Divvi suffix generated:", divviSuffix);
+      let hash: `0x${string}`;
+
+      if (isGdollar) {
+        // Optimized path for G$ token using transferAndCall
+        toast.loading("Preparing G$ transfer...", { id: toastId });
+
+        // Encode the event ID for transferAndCall data
+        const eventIdData = encodeAbiParameters(
+          [{ type: "uint256" }],
+          [eventId]
+        );
+
+        // Combine with Divvi suffix
+        const fullData = (eventIdData +
+          (divviSuffix.startsWith("0x")
+            ? divviSuffix.slice(2)
+            : divviSuffix)) as `0x${string}`;
+
+        console.log("[Ticket] Using transferAndCall with data:", fullData);
+
+        // Execute transferAndCall and assign to hash
+        hash = await walletClient.writeContract({
+          address: paymentToken as `0x${string}`,
+          abi: [
+            {
+              inputs: [
+                { name: "to", type: "address" },
+                { name: "value", type: "uint256" },
+                { name: "data", type: "bytes" },
+              ],
+              name: "transferAndCall",
+              outputs: [{ name: "", type: "bool" }],
+              stateMutability: "nonpayable",
+              type: "function",
+            },
+          ],
+          functionName: "transferAndCall",
+          args: [CONTRACT_ADDRESS, requiredAmount, fullData],
+        });
+      } else if (isCelo) {
+        // CELO native token flow
+        const encodedFunction = encodeFunctionData({
+          abi: contractABI.abi,
+          functionName: "buyTicket",
+          args: [eventId],
+        });
+
+        const dataWithDivvi = (encodedFunction +
+          (divviSuffix.startsWith("0x")
+            ? divviSuffix.slice(2)
+            : divviSuffix)) as `0x${string}`;
+
+        hash = await walletClient.sendTransaction({
+          account: address,
+          to: CONTRACT_ADDRESS,
+          data: dataWithDivvi,
+          value: requiredAmount, // Include CELO value
+        });
+      } else {
+        // Standard ERC-20 flow for other tokens
+        const requiredAllowance = requiredAmount;
+        console.log(
+          "[Ticket] Required allowance:",
+          requiredAllowance.toString()
+        );
+
+        // First handle token approval if needed
+        if (!tokenAllowance || tokenAllowance < requiredAllowance) {
+          console.log(
+            "[Ticket] Approval needed - current allowance:",
+            tokenAllowance?.toString() || "0"
+          );
+          toast.loading("Approving token spend...", { id: toastId });
+
+          console.log("[Ticket] Sending approval transaction");
+          await write({
+            address: paymentToken as `0x${string}`,
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [CONTRACT_ADDRESS, requiredAllowance],
+            gas: BigInt(300000),
+          });
+          console.log("[Ticket] Approval transaction completed");
+        } else {
+          console.log("[Ticket] Sufficient allowance already exists");
+        }
+
+        // Encode the buyTicket function call
+        console.log("[Ticket] Encoding buyTicket function");
+        const encodedFunction = encodeFunctionData({
+          abi: contractABI.abi,
+          functionName: "buyTicket",
+          args: [eventId],
+        });
+
+        // Combine with Divvi suffix
+        const dataWithDivvi = (encodedFunction +
+          (divviSuffix.startsWith("0x")
+            ? divviSuffix.slice(2)
+            : divviSuffix)) as `0x${string}`;
+
+        toast.loading("Waiting for wallet confirmation...", { id: toastId });
+
+        // Send transaction with Divvi data and assign to hash
+        console.log("[Ticket] Sending transaction to wallet");
+        hash = await walletClient.sendTransaction({
+          account: address,
+          to: CONTRACT_ADDRESS,
+          data: dataWithDivvi,
           gas: BigInt(300000),
         });
       }
 
-      await write({
-        address: CONTRACT_ADDRESS,
-        abi: contractABI.abi,
-        functionName: "buyTicket",
-        args: [eventId],
-        gas: BigInt(500000),
+      console.log("[Ticket] Transaction submitted, hash:", hash);
+      setLoading(false);
+      toast.success("Transaction submitted!", { id: toastId });
+
+      // Report to Divvi - now hash is guaranteed to be defined
+      console.log("[Ticket] Reporting to Divvi");
+      await reportToDivvi(hash);
+      console.log("[Ticket] Ticket purchase process completed");
+    } catch (error: any) {
+      console.error("[Ticket] Transaction failed:", {
+        error: error.message,
+        stack: error.stack,
       });
-    } catch (error) {
-      console.error("Full error:", error);
-      toast.error("Transaction failed");
+      toast.error(error.shortMessage || error.message || "Transaction failed");
+      setLoading(false);
     }
-  }, [isConnected, eventDetails, address, eventId, write, tokenAllowance]);
+  }, [
+    isConnected,
+    eventDetails,
+    address,
+    eventId,
+    write,
+    tokenAllowance,
+    walletClient,
+    tokenBalance,
+  ]);
 
   const requestRefund = useCallback(async () => {
+    console.log("[Refund] Starting refund process");
+
     if (!isConnected) {
+      console.log("[Refund] Wallet not connected - aborting");
       toast.error("Please connect your wallet first");
       return;
     }
 
-    if (!eventDetails || !address) {
+    if (!eventDetails || !address || !walletClient) {
+      console.log("[Refund] Missing required data - aborting", {
+        eventDetails: !!eventDetails,
+        address: !!address,
+        walletClient: !!walletClient,
+      });
       toast.error("Wallet not properly connected");
       return;
     }
 
     if (!eventDetails.attendees.includes(address)) {
+      console.log("[Refund] User doesn't have ticket", { user: address });
       toast.error("You don't have a ticket to refund");
       return;
     }
 
     try {
-      writeRefund({
-        address: CONTRACT_ADDRESS,
+      setLoading(true);
+      console.log("[Refund] Starting transaction flow");
+      const toastId = toast.loading("Preparing refund...");
+
+      // Get Divvi data suffix
+      console.log("[Refund] Generating Divvi suffix");
+      const divviSuffix = getReferralTag(DIVVI_CONFIG);
+      console.log("[Refund] Divvi suffix generated:", divviSuffix);
+
+      // Encode the requestRefund function call
+      console.log("[Refund] Encoding requestRefund function");
+      const encodedFunction = encodeFunctionData({
         abi: contractABI.abi,
         functionName: "requestRefund",
         args: [eventId],
       });
+      console.log("[Refund] Encoded function:", encodedFunction);
+
+      // Combine with Divvi suffix
+      const dataWithDivvi = (encodedFunction +
+        (divviSuffix.startsWith("0x")
+          ? divviSuffix.slice(2)
+          : divviSuffix)) as `0x${string}`;
+      console.log("[Refund] Final transaction data:", dataWithDivvi);
+
+      toast.loading("Waiting for wallet confirmation...", { id: toastId });
+
+      // Send transaction with Divvi data
+      console.log("[Refund] Sending transaction to wallet");
+      const hash = await walletClient.sendTransaction({
+        account: address,
+        to: CONTRACT_ADDRESS,
+        data: dataWithDivvi,
+      });
+      console.log("[Refund] Transaction submitted, hash:", hash);
+
+      setLoading(false);
+      toast.success("Refund submitted!", { id: toastId });
+
+      // Report to Divvi
+      console.log("[Refund] Reporting to Divvi");
+      await reportToDivvi(hash);
+      console.log("[Refund] Refund process completed");
     } catch (error: any) {
-      console.error("Refund request failed:", error);
-      toast.error(error?.message || "Failed to process refund");
+      console.error("[Refund] Transaction failed:", {
+        error: error.message,
+        stack: error.stack,
+      });
+      toast.error(error.message || "Refund failed");
+      setLoading(false);
     }
-  }, [isConnected, eventDetails, address, eventId, writeRefund]);
+  }, [isConnected, eventDetails, address, eventId, walletClient]);
 
   if (isEventError) {
     return (

@@ -10,10 +10,17 @@
   },
   "dependencies": {
     "@celo/contractkit": "^9.0.0",
+    "@divvi/referral-sdk": "^2.2.0",
     "@heroicons/react": "^2.2.0",
     "@privy-io/react-auth": "^2.13.1",
     "@rainbow-me/rainbowkit": "^2.2.4",
-    "@tanstack/react-query": "^5.72.1",
+    "@reown/appkit": "^1.8.13",
+    "@reown/appkit-adapter-wagmi": "^1.8.13",
+    "@reown/appkit-wallet-button": "^1.8.13",
+    "@selfxyz/core": "^0.0.25",
+    "@selfxyz/qrcode": "^0.0.19",
+    "@tanstack/react-query": "^5.83.0",
+    "axios": "^1.11.0",
     "dotenv": "^16.4.7",
     "ethereum-blockies": "^0.1.1",
     "ethers": "^6.13.5",
@@ -23,8 +30,8 @@
     "react-dom": "^19.0.0",
     "react-hot-toast": "^2.5.2",
     "thirdweb": "^5.93.15",
-    "viem": "2.x",
-    "wagmi": "^2.14.16"
+    "viem": "~2.38.6",
+    "wagmi": "^2.19.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
