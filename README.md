@@ -101,10 +101,10 @@ pnpm run dev   # Runs the Next.js app on http://localhost:3000
 
 ### **Recent Transactions**
 
-1. **Latest TX 1**  
+<!-- 1. **Latest TX 1**
    🔗 [View on BaseScan](https://basescan.org/tx/0x2d4af5be6ba94cb1f45cf7c5db67471ab884c13825bf388dee4fd0886955555c)
 
-   - Contract: `0xb3972Ca9d6BD396CE0C1Cc2065bBb386f9892474`
+   - Contract: `0xb3972Ca9d6BD396CE0C1Cc2065bBb386f9892474` -->
 
 ---
 

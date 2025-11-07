@@ -36,7 +36,7 @@ export interface Event {
 }
 
 const CONTRACT_ADDRESS = "0xe8D2508aE4Ed4908d31bbc145b5A5Be74a48A264";
-const CELO_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000000";
+const BASE_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
@@ -54,12 +54,6 @@ export default function Home() {
     user: address as `0x${string}`,
     consumer: "0x5e23d5Be257d9140d4C5b12654111a4D4E18D9B2" as `0x${string}`,
   };
-
-  // Add CELO balance check
-  const { data: celoBalance } = useBalance({
-    address: address,
-    query: { enabled: !!address },
-  });
 
   // Contract data fetching with refetch capability
   const {
@@ -94,7 +88,7 @@ export default function Home() {
       enabled:
         !!address &&
         !!eventDetails?.event.paymentToken &&
-        eventDetails.event.paymentToken !== CELO_TOKEN_ADDRESS,
+        eventDetails.event.paymentToken !== BASE_TOKEN_ADDRESS,
     },
     // query: { enabled: !!address && !!eventDetails?.event.paymentToken },
   });
@@ -109,7 +103,7 @@ export default function Home() {
       enabled:
         !!address &&
         !!eventDetails?.event.paymentToken &&
-        eventDetails.event.paymentToken !== CELO_TOKEN_ADDRESS,
+        eventDetails.event.paymentToken !== BASE_TOKEN_ADDRESS,
     },
     // query: { enabled: !!address && !!eventDetails?.event.paymentToken },
   });
@@ -217,7 +211,7 @@ export default function Home() {
   const reportToDivvi = async (txHash: `0x${string}`) => {
     console.log("[Divvi] Starting to report transaction:", txHash);
     try {
-      const chainId = 8453; // Celo mainnet
+      const chainId = 8453;
       console.log("[Divvi] Using chainId:", chainId);
       await submitReferral({ txHash, chainId });
       console.log("[Divvi] Successfully reported transaction");
@@ -276,24 +270,9 @@ export default function Home() {
       const isGdollar =
         paymentToken.toLowerCase() ===
         "0x62b8b11039fcfe5ab0c56e502b1c372a3d2a9c7a";
-      const isCelo = paymentToken === CELO_TOKEN_ADDRESS;
+      const isBase = paymentToken === BASE_TOKEN_ADDRESS;
 
       console.log("[Ticket] Payment token:", paymentToken, "is G$:", isGdollar);
-
-      // Check balance - different logic for CELO vs ERC20
-      // if (isCelo) {
-      //   if (!celoBalance || celoBalance.value < requiredAmount) {
-      //     toast.error("Insufficient CELO balance");
-      //     setLoading(false);
-      //     return;
-      //   }
-      // } else {
-      //   if (tokenBalance !== undefined && tokenBalance < requiredAmount) {
-      //     toast.error("Insufficient token balance");
-      //     setLoading(false);
-      //     return;
-      //   }
-      // }
 
       // Get Divvi data suffix
       console.log("[Ticket] Generating Divvi suffix");
@@ -338,8 +317,7 @@ export default function Home() {
           functionName: "transferAndCall",
           args: [CONTRACT_ADDRESS, requiredAmount, fullData],
         });
-      } else if (isCelo) {
-        // CELO native token flow
+      } else if (isBase) {
         const encodedFunction = encodeFunctionData({
           abi: contractABI.abi,
           functionName: "buyTicket",
@@ -355,7 +333,7 @@ export default function Home() {
           account: address,
           to: CONTRACT_ADDRESS,
           data: dataWithDivvi,
-          value: requiredAmount, // Include CELO value
+          value: requiredAmount,
         });
       } else {
         // Standard ERC-20 flow for other tokens

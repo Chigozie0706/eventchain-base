@@ -14,7 +14,6 @@ import {
 import { getReferralTag, submitReferral } from "@divvi/referral-sdk";
 import contractABI from "../contract/abi.json";
 import { encodeFunctionData } from "viem";
-import { celo } from "viem/chains";
 
 interface EventData {
   eventName: string;

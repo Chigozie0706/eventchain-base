@@ -2,7 +2,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
-import { base, baseSepolia } from "@reown/appkit/networks";
+import { base } from "@reown/appkit/networks";
 import { createAppKit } from "@reown/appkit/react";
 
 // 1. Get projectId from https://dashboard.reown.com
@@ -25,7 +25,7 @@ const metadata = {
 
 // 4. Create Wagmi Adapter
 const wagmiAdapter = new WagmiAdapter({
-  networks: [base, baseSepolia],
+  networks: [base],
   projectId,
   ssr: true,
 });
@@ -33,7 +33,7 @@ const wagmiAdapter = new WagmiAdapter({
 // 5. Create modal
 createAppKit({
   adapters: [wagmiAdapter],
-  networks: [base, baseSepolia],
+  networks: [base],
   projectId,
   metadata,
   features: {

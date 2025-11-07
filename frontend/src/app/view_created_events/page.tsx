@@ -76,7 +76,7 @@ export default function MyEvents() {
   const reportToDivvi = async (txHash: `0x${string}`) => {
     console.log("[Divvi] Starting to report transaction:", txHash);
     try {
-      const chainId = 42220; // Celo mainnet
+      const chainId = 8453;
       console.log("[Divvi] Using chainId:", chainId);
       await submitReferral({ txHash, chainId });
       console.log("[Divvi] Successfully reported transaction");
