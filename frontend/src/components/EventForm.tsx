@@ -39,7 +39,7 @@ interface Address {
   longitude: string | number; // Can be string or number depending on your needs
 }
 
-const CONTRACT_ADDRESS = "0x4d076657405ec101Ee546f81BCc818abE83e31f3";
+const CONTRACT_ADDRESS = "0xe8D2508aE4Ed4908d31bbc145b5A5Be74a48A264";
 
 const tokenOptions = [
   {

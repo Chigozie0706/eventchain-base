@@ -97,27 +97,12 @@ pnpm run dev   # Runs the Next.js app on http://localhost:3000
 
 | Contract   | Address                                      | Status   |
 | ---------- | -------------------------------------------- | -------- |
-| EventChain | `0xb3972Ca9d6BD396CE0C1Cc2065bBb386f9892474` | **Live** |
+| EventChain | `0xe8D2508aE4Ed4908d31bbc145b5A5Be74a48A264` | **Live** |
 
 ### **Recent Transactions**
 
 1. **Latest TX 1**  
    🔗 [View on BaseScan](https://basescan.org/tx/0x2d4af5be6ba94cb1f45cf7c5db67471ab884c13825bf388dee4fd0886955555c)
-
-   - Contract: `0xb3972Ca9d6BD396CE0C1Cc2065bBb386f9892474`
-
-2. **Latest TX 2**  
-   🔗 [View on BaseScan](https://basescan.org/tx/0xc7229640074ce51700fe1be97df40232895fd5f7c08a65aadbc0156424cb5f93)
-
-   - Contract: `0xb3972Ca9d6BD396CE0C1Cc2065bBb386f9892474`
-
-3. **Latest TX 3**  
-   🔗 [View on BaseScan](https://basescan.org/tx/0x63d6eff478e48c3186e49921defce5049f3d048c4526133588c51fe8ede108bf)
-
-   - Contract: `0xb3972Ca9d6BD396CE0C1Cc2065bBb386f9892474`
-
-4. **Latest TX 4**  
-   🔗 [View on BaseScan](https://basescan.org/tx/0x725a916cf39f7aea05d97be510b98ad25b3c7cfc74ee08c8be9b620ac1d8a18d)
 
    - Contract: `0xb3972Ca9d6BD396CE0C1Cc2065bBb386f9892474`
 

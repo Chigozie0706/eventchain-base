@@ -46,7 +46,7 @@ contract EventChain is ReentrancyGuard {
     /// @notice Address of the UBI pool that receives 1% fee from G$ token purchases
     address public ubiPool = 0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1;
 
-    address public constant CELO = address(0);
+    address public constant Base = address(0);
 
     /**
      * @dev Constructor to initialize supported tokens.
@@ -54,7 +54,7 @@ contract EventChain is ReentrancyGuard {
      */
     constructor(address[] memory _supportedTokens) {
         // Explicitly handle ZeroAddress
-        supportedTokens[address(0)] = true; // Native CELO
+        supportedTokens[address(0)] = true; // Native
 
         // Handle other tokens
         for (uint i = 0; i < _supportedTokens.length; i++) {
@@ -66,8 +66,7 @@ contract EventChain is ReentrancyGuard {
         }
     }
 
-    receive() external payable {} // Accept CELO natively
-
+    receive() external payable {}
     /// @notice Structure to store comprehensive event details
     struct Event {
         address owner;
@@ -100,7 +99,7 @@ contract EventChain is ReentrancyGuard {
     /// @notice Mapping to track if a user has purchased a ticket for an event
     mapping(uint256 => mapping(address => bool)) public hasPurchasedTicket;
 
-    mapping(uint256 => uint256) public celoFundsHeld;
+    mapping(uint256 => uint256) public baseFundsHeld;
 
     /// @notice Event emitted when a new event is created
     event EventCreated(
@@ -372,10 +371,10 @@ contract EventChain is ReentrancyGuard {
         bool isGdollar = (event_.paymentToken ==
             0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A);
 
-        // Handle CELO payments
-        if (event_.paymentToken == CELO) {
-            require(msg.value == price, "Incorrect CELO amount");
-            celoFundsHeld[_index] += price;
+        // Handle  payments
+        if (event_.paymentToken == Base) {
+            require(msg.value == price, "Incorrect Base amount");
+            baseFundsHeld[_index] += price;
         }
         // Handle G$ token (with fee)
         else if (isGdollar) {
@@ -508,10 +507,10 @@ contract EventChain is ReentrancyGuard {
         }
 
         // Check available funds
-        if (paymentToken == CELO) {
+        if (paymentToken == Base) {
             require(
-                celoFundsHeld[_index] >= refundAmount,
-                "Insufficient CELO funds"
+                baseFundsHeld[_index] >= refundAmount,
+                "Insufficient Base funds"
             );
         } else {
             require(
@@ -530,10 +529,10 @@ contract EventChain is ReentrancyGuard {
         // Process refund
         hasPurchasedTicket[_index][msg.sender] = false;
 
-        if (paymentToken == CELO) {
-            celoFundsHeld[_index] -= refundAmount;
+        if (paymentToken == Base) {
+            baseFundsHeld[_index] -= refundAmount;
             (bool success, ) = msg.sender.call{value: refundAmount}("");
-            require(success, "CELO refund failed");
+            require(success, "Base refund failed");
         } else {
             events[_index].fundsHeld -= refundAmount;
             IERC20(paymentToken).safeTransfer(msg.sender, refundAmount);
@@ -602,11 +601,11 @@ contract EventChain is ReentrancyGuard {
         uint256 amountToRelease;
         address paymentToken = events[_index].paymentToken;
 
-        if (paymentToken == CELO) {
-            amountToRelease = celoFundsHeld[_index];
-            celoFundsHeld[_index] = 0;
+        if (paymentToken == Base) {
+            amountToRelease = baseFundsHeld[_index];
+            baseFundsHeld[_index] = 0;
             (bool success, ) = msg.sender.call{value: amountToRelease}("");
-            require(success, "CELO transfer failed");
+            require(success, "Base transfer failed");
         } else {
             amountToRelease = events[_index].fundsHeld;
             events[_index].fundsHeld = 0;
