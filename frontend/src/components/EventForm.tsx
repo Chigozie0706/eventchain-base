@@ -4,12 +4,16 @@ import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
 import { parseUnits } from "ethers";
 import axios from "axios";
+import { getWalletClient } from "wagmi/actions";
+import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
+import { base } from "@reown/appkit/networks";
 
 import {
   useAccount,
   useWriteContract,
   useWaitForTransactionReceipt,
   useWalletClient,
+  useConnectorClient,
 } from "wagmi";
 import { getReferralTag, submitReferral } from "@divvi/referral-sdk";
 import contractABI from "../contract/abi.json";
@@ -34,9 +38,22 @@ interface Address {
   region: string;
   postcode: string;
   country: string;
-  latitude: string | number; // Can be string or number depending on your needs
-  longitude: string | number; // Can be string or number depending on your needs
+  latitude: string | number;
+  longitude: string | number;
 }
+
+const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID;
+
+if (!projectId) {
+  throw new Error(
+    "Missing NEXT_PUBLIC_REOWN_PROJECT_ID in environment variables"
+  );
+}
+const wagmiAdapter = new WagmiAdapter({
+  networks: [base],
+  projectId,
+  ssr: true,
+});
 
 const CONTRACT_ADDRESS = "0xe8D2508aE4Ed4908d31bbc145b5A5Be74a48A264";
 
@@ -65,20 +82,87 @@ const EventForm = () => {
     minimumAge: "0",
     paymentToken: tokenOptions[0].address,
   });
-  const [loading, setLoading] = useState(false);
-  const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { data: walletClient } = useWalletClient();
+  const { data: connectorClient } = useConnectorClient();
   const { address } = useAccount();
 
   const DIVVI_CONFIG = {
     user: address as `0x${string}`,
     consumer: "0x5e23d5Be257d9140d4C5b12654111a4D4E18D9B2" as `0x${string}`,
   };
+
+  // Wagmi hooks for contract interaction
+  const {
+    writeContract: write,
+    data: hash,
+    isPending: isWriting,
+    error: writeError,
+  } = useWriteContract();
+
+  const { isLoading: isConfirming, isSuccess: isConfirmed } =
+    useWaitForTransactionReceipt({ hash });
+
+  // Handle transaction lifecycle
+  useEffect(() => {
+    if (isWriting) {
+      toast.loading("Preparing transaction...", { id: "tx-toast" });
+    }
+  }, [isWriting]);
+
+  useEffect(() => {
+    if (isConfirming && hash) {
+      toast.loading("Confirming transaction...", { id: "tx-toast" });
+    }
+  }, [isConfirming, hash]);
+
+  useEffect(() => {
+    const handleSuccess = async () => {
+      if (isConfirmed && hash) {
+        try {
+          // Report to Divvi
+          await reportToDivvi(hash);
+
+          toast.success("Event created successfully!", { id: "tx-toast" });
+
+          // Reset form
+          setEventData({
+            eventName: "",
+            eventDetails: "",
+            startDate: "",
+            endDate: "",
+            startTime: "",
+            endTime: "",
+            eventLocation: "",
+            eventPrice: "",
+            paymentToken: tokenOptions[0].address,
+            minimumAge: "0",
+          });
+          setFile(null);
+          setPreview(null);
+
+          // Redirect
+          router.push("/view_events");
+        } catch (error) {
+          console.error("Post-transaction error:", error);
+        }
+      }
+    };
+
+    handleSuccess();
+  }, [isConfirmed, hash, router]);
+
+  useEffect(() => {
+    if (writeError) {
+      console.error("Write error:", writeError);
+      toast.error(writeError.message || "Transaction failed", {
+        id: "tx-toast",
+      });
+    }
+  }, [writeError]);
 
   const handleChange = (
     e: React.ChangeEvent<
@@ -98,9 +182,12 @@ const EventForm = () => {
         !eventData.startTime ||
         !eventData.endTime ||
         !eventData.eventLocation ||
-        !eventData.eventPrice
+        !eventData.eventPrice ||
+        !file
       ) {
-        throw new Error("Please fill in all required fields");
+        throw new Error(
+          "Please fill in all required fields and upload an image"
+        );
       }
 
       const startDateTime = new Date(
@@ -156,7 +243,6 @@ const EventForm = () => {
 
     if (!selectedFile) return;
 
-    // Rest of your validation logic...
     if (!selectedFile.type.startsWith("image/")) {
       setError("Only image files are allowed");
       return;
@@ -201,71 +287,44 @@ const EventForm = () => {
     return `https://gateway.pinata.cloud/ipfs/${response.data.IpfsHash}`;
   };
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
 
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        handleFileChange(e.dataTransfer.files[0]);
-      }
-    },
-    [handleFileChange]
-  );
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileChange(e.dataTransfer.files[0]);
+    }
+  }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
   }, []);
 
-  const createEvent1 = async () => {
-    console.log("[DEBUG] Starting createEvent function");
-    if (!validateForm()) {
-      console.log("[DEBUG] Form validation failed");
-      return;
-    }
-
-    if (!address || !walletClient) {
-      console.log(
-        "[DEBUG] Wallet not connected - address:",
-        address,
-        "walletClient:",
-        walletClient
-      );
+  const createEvent = async () => {
+    if (!validateForm()) return;
+    if (!address) {
       toast.error("Please connect your wallet");
       return;
     }
 
     try {
-      setLoading(true);
-      const toastId = toast.loading("Creating event...");
+      console.log("Starting event creation process...");
 
-      // Upload image to IPFS
-      toast.loading("Uploading image...", { id: toastId });
+      // Upload image to IPFS first
+      setUploading(true);
+      toast.loading("Uploading image to IPFS...", { id: "upload-toast" });
       const imageUrl = await uploadToIPFS(file!);
       const ipfsHash = imageUrl.split("/").pop() || "";
+      toast.success("Image uploaded successfully!", { id: "upload-toast" });
+      setUploading(false);
+      const minimumAge = BigInt(eventData.minimumAge);
 
-      // Validate URL length (matches contract MAX_URL_LENGTH = 200)
-      if (ipfsHash.length > 200) {
-        throw new Error("Image URL too long");
-      }
-
-      console.log("ipfsHash", ipfsHash);
-
-      // Prepare transaction data
-      console.log("[DEBUG] Preparing date/time values");
+      // Prepare date/time values
       const startDateTime = new Date(
         `${eventData.startDate}T${eventData.startTime}`
       );
       const endDateTime = new Date(`${eventData.endDate}T${eventData.endTime}`);
-      console.log(
-        "[DEBUG] Date objects created - start:",
-        startDateTime,
-        "end:",
-        endDateTime
-      );
-
-      const minimumAge = BigInt(eventData.minimumAge);
 
       const startDate = BigInt(Math.floor(startDateTime.getTime() / 1000));
       const endDate = BigInt(Math.floor(endDateTime.getTime() / 1000));
@@ -275,42 +334,18 @@ const EventForm = () => {
       const endTime = BigInt(
         endDateTime.getHours() * 3600 + endDateTime.getMinutes() * 60
       );
-      console.log(
-        "[DEBUG] Converted to Unix timestamps - startDate:",
-        startDate,
-        "endDate:",
-        endDate,
-        "startTime:",
-        startTime,
-        "endTime:",
-        endTime
-      );
 
-      console.log("[DEBUG] Parsing price:", eventData.eventPrice);
       const priceInWei = parseUnits(eventData.eventPrice, 18);
-      console.log("[DEBUG] Price in wei:", priceInWei.toString());
 
-      // Get Divvi data suffix
-      console.log("[DEBUG] Generating Divvi suffix with config:", DIVVI_CONFIG);
-      const divviSuffix = getReferralTag(DIVVI_CONFIG);
-
-      console.log("[DEBUG] Divvi suffix generated:", divviSuffix);
-
-      // Encode contract function call
-      console.log("[DEBUG] Encoding function with ABI and args:", {
-        eventName: eventData.eventName,
-        eventImgUrl: ipfsHash,
-        eventDetails: eventData.eventDetails,
-        startDate,
-        endDate,
-        startTime,
-        endTime,
-        eventLocation: eventData.eventLocation,
-        priceInWei,
-        paymentToken: eventData.paymentToken,
+      console.log("Calling smart contract...", {
+        startDate: startDate.toString(),
+        endDate: endDate.toString(),
+        priceInWei: priceInWei.toString(),
       });
 
-      const encodedFunction = encodeFunctionData({
+      // Execute contract call
+      write({
+        address: CONTRACT_ADDRESS,
         abi: contractABI.abi,
         functionName: "createEvent",
         args: [
@@ -327,188 +362,10 @@ const EventForm = () => {
           eventData.paymentToken,
         ],
       });
-      console.log("[DEBUG] Encoded function data:", encodedFunction);
-
-      // Combine with Divvi suffix
-      const dataWithDivvi = (encodedFunction +
-        (divviSuffix.startsWith("0x")
-          ? divviSuffix.slice(2)
-          : divviSuffix)) as `0x${string}`;
-      console.log("[DEBUG] Combined data with Divvi suffix:", dataWithDivvi);
-
-      toast.loading("Waiting for wallet confirmation...", { id: toastId });
-      console.log("[DEBUG] Sending transaction...");
-
-      // Send transaction
-      const hash1 = await walletClient.sendTransaction({
-        account: address,
-        to: CONTRACT_ADDRESS,
-        data: dataWithDivvi,
-      });
-
-      let hash;
-      if (
-        eventData.paymentToken === "0x0000000000000000000000000000000000000000"
-      ) {
-        hash = await walletClient.sendTransaction({
-          account: address,
-          to: CONTRACT_ADDRESS,
-          data: dataWithDivvi,
-        });
-      } else {
-        // For ERC20 tokens, normal transaction
-        hash = await walletClient.sendTransaction({
-          account: address,
-          to: CONTRACT_ADDRESS,
-          data: dataWithDivvi,
-        });
-      }
-      console.log("[DEBUG] Transaction sent, hash:", hash);
-
-      setTxHash(hash);
-      toast.loading("Processing transaction...", { id: toastId });
-      console.log("[DEBUG] Transaction hash set:", hash);
-
-      // Report to Divvi
-      console.log("[DEBUG] Reporting to Divvi with hash:", hash);
-      await reportToDivvi(hash);
-      console.log("[DEBUG] Successfully reported to Divvi");
-
-      // Success
-      toast.success("Event created successfully!", { id: toastId });
-      setLoading(false);
-      console.log("[DEBUG] Loading state set to false after success");
-
-      // Reset form and redirect
-
-      setEventData({
-        eventName: "",
-        eventDetails: "",
-        startDate: "",
-        endDate: "",
-        startTime: "",
-        endTime: "",
-        eventLocation: "",
-        eventPrice: "",
-        paymentToken: tokenOptions[0].address,
-        minimumAge: "0",
-      });
-
-      console.log("[DEBUG] Redirecting to /view_events");
-      router.push("/view_events");
-    } catch (error: any) {
-      console.error("[ERROR] Event creation failed:", {
-        error: error.message,
-        stack: error.stack,
-        eventData,
-        timestamp: new Date().toISOString(),
-      });
-      toast.dismiss();
-      toast.error(error.message || "Failed to create event");
-      setLoading(false);
-      console.log("[DEBUG] Loading state set to false after error");
-    }
-  };
-
-  const createEvent = async () => {
-    if (!validateForm()) return;
-    if (!address || !walletClient) {
-      toast.error("Please connect your wallet");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const toastId = toast.loading("Creating event...");
-
-      // Upload image to IPFS
-      const imageUrl = await uploadToIPFS(file!);
-      const ipfsHash = imageUrl.split("/").pop() || "";
-
-      // Prepare transaction data
-      const startDateTime = new Date(
-        `${eventData.startDate}T${eventData.startTime}`
-      );
-      const endDateTime = new Date(`${eventData.endDate}T${eventData.endTime}`);
-
-      const minimumAge = BigInt(eventData.minimumAge);
-      const startDate = BigInt(Math.floor(startDateTime.getTime() / 1000));
-      const endDate = BigInt(Math.floor(endDateTime.getTime() / 1000));
-      const startTime = BigInt(
-        startDateTime.getHours() * 3600 + startDateTime.getMinutes() * 60
-      );
-      const endTime = BigInt(
-        endDateTime.getHours() * 3600 + endDateTime.getMinutes() * 60
-      );
-
-      const priceInWei = parseUnits(eventData.eventPrice, 18);
-
-      // Get Divvi data suffix
-      const divviSuffix = getReferralTag(DIVVI_CONFIG);
-
-      // Encode contract function call
-      const encodedFunction = encodeFunctionData({
-        abi: contractABI.abi,
-        functionName: "createEvent",
-        args: [
-          eventData.eventName,
-          ipfsHash,
-          eventData.eventDetails,
-          startDate,
-          endDate,
-          startTime,
-          endTime,
-          eventData.eventLocation,
-          priceInWei,
-          minimumAge,
-          eventData.paymentToken.toLowerCase(), // Ensure lowercase for comparison
-        ],
-      });
-
-      // Combine with Divvi suffix
-      const dataWithDivvi = (encodedFunction +
-        (divviSuffix.startsWith("0x")
-          ? divviSuffix.slice(2)
-          : divviSuffix)) as `0x${string}`;
-
-      // Send transaction with sufficient gas
-      const hash = await walletClient.sendTransaction({
-        account: address,
-        to: CONTRACT_ADDRESS,
-        data: dataWithDivvi,
-        gas: BigInt(1_000_000),
-      });
-
-      setTxHash(hash);
-      toast.loading("Processing transaction...", { id: toastId });
-
-      // Report to Divvi
-      await reportToDivvi(hash);
-
-      toast.success("Event created successfully!", { id: toastId });
-
-      // Reset form and redirect
-      setEventData({
-        eventName: "",
-        eventDetails: "",
-        startDate: "",
-        endDate: "",
-        startTime: "",
-        endTime: "",
-        eventLocation: "",
-        eventPrice: "",
-        paymentToken: tokenOptions[0].address,
-        minimumAge: "0",
-      });
-
-      router.push("/view_events");
     } catch (error: any) {
       console.error("Event creation failed:", error);
-      toast.error(
-        error.shortMessage || error.message || "Failed to create event"
-      );
-    } finally {
-      setLoading(false);
+      toast.error(error.message || "Failed to create event");
+      setUploading(false);
     }
   };
 
@@ -528,30 +385,7 @@ const EventForm = () => {
     }
   };
 
-  const [address1, setAddress1] = useState<Address>({
-    streetAndNumber: "",
-    place: "",
-    region: "",
-    postcode: "",
-    country: "",
-    latitude: "",
-    longitude: "",
-  });
-
-  const handleFormSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (address1.streetAndNumber) {
-      console.log("Selected address:", address1);
-    }
-  };
-
-  const updateCoordinates = (
-    latitude: string | number,
-    longitude: string | number
-  ) => {
-    setAddress1({ ...address1, latitude, longitude });
-  };
+  const isLoading = isWriting || isConfirming || uploading;
 
   return (
     <div className="max-w-2xl mx-auto bg-white p-6 rounded-lg shadow-lg my-20">
@@ -559,7 +393,6 @@ const EventForm = () => {
         Create Your Event
       </h2>
 
-      {/* Form fields (same as your existing JSX) */}
       <div className="mb-4">
         <label className="block text-gray-700 font-medium text-sm mb-2">
           Event Title *
@@ -620,7 +453,6 @@ const EventForm = () => {
           </div>
         </div>
 
-        {/* Single Preview Section */}
         {preview && (
           <div className="mt-4">
             <img
@@ -642,7 +474,6 @@ const EventForm = () => {
         )}
       </div>
 
-      {/* Event Details */}
       <div className="mb-4">
         <label className="block text-gray-700 font-medium mb-2 text-sm">
           Event Description *
@@ -657,7 +488,6 @@ const EventForm = () => {
         ></textarea>
       </div>
 
-      {/* Start Date */}
       <div className="mb-4">
         <label className="block text-gray-700 font-medium mb-2 text-sm">
           Start Date *
@@ -671,7 +501,6 @@ const EventForm = () => {
         />
       </div>
 
-      {/* End Date */}
       <div className="mb-4">
         <label className="block text-gray-700 font-medium mb-2 text-sm">
           End Date *
@@ -685,7 +514,6 @@ const EventForm = () => {
         />
       </div>
 
-      {/* Start & End Time */}
       <div className="flex gap-4 mb-4">
         <div className="flex-1">
           <label className="block text-gray-700 font-medium mb-2 text-sm">
@@ -713,7 +541,6 @@ const EventForm = () => {
         </div>
       </div>
 
-      {/* Event Location */}
       <div className="mb-4">
         <label className="block text-gray-700 font-medium mb-2 text-sm">
           Location *
@@ -728,7 +555,6 @@ const EventForm = () => {
         />
       </div>
 
-      {/* Minimum Age */}
       <div className="mb-4">
         <label className="block text-gray-700 font-medium mb-2 text-sm">
           Minimum Age Requirement *
@@ -745,10 +571,9 @@ const EventForm = () => {
         />
       </div>
 
-      {/* Select Payment Token */}
       <div className="mb-4">
         <label className="block text-gray-700 font-medium text-sm mb-2">
-          Payment Token (cUSD, cEUR, cREAL)*
+          Payment Token *
         </label>
         <select
           name="paymentToken"
@@ -756,9 +581,6 @@ const EventForm = () => {
           onChange={handleTokenChange}
           className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-5"
         >
-          <option value="" disabled>
-            Select a payment token
-          </option>
           {tokenOptions.map((token) => (
             <option key={token.address} value={token.address}>
               {token.symbol}
@@ -767,7 +589,6 @@ const EventForm = () => {
         </select>
       </div>
 
-      {/* Event Price */}
       <div className="mb-4">
         <label className="block text-gray-700 font-medium mb-2 text-sm">
           Ticket Price *
@@ -778,15 +599,17 @@ const EventForm = () => {
           value={eventData.eventPrice}
           onChange={handleChange}
           placeholder="Enter ticket price"
+          step="0.01"
           className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-5"
         />
       </div>
+
       <button
-        className="w-full bg-orange-700 text-white p-3 rounded-lg font-semibold hover:bg-orange-800 transition"
+        className="w-full bg-orange-700 text-white p-3 rounded-lg font-semibold hover:bg-orange-800 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
         onClick={createEvent}
-        disabled={loading}
+        disabled={isLoading}
       >
-        {loading ? "Processing..." : "Create Event"}
+        {isLoading ? "Processing..." : "Create Event"}
       </button>
     </div>
   );
