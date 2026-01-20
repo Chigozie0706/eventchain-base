@@ -323,4 +323,70 @@ contract EventChain is ReentrancyGuard, Ownable {
 
         emit EventUpdated(_index, msg.sender, _eventName);
     }
+
+    /**
+     * @notice Buy ticket - FIXED to use per-event capacity
+     */
+    function buyTicket(
+        uint256 _index
+    ) public payable nonReentrant validEvent(_index) whenNotPaused {
+        Event storage event_ = events[_index];
+
+        require(
+            block.timestamp < event_.startDate,
+            "Event has started or expired"
+        );
+        require(event_.isActive, "Event is not active");
+        require(
+            !hasPurchasedTicket[_index][msg.sender],
+            "Ticket already purchased"
+        );
+        require(
+            attendeeCount[_index] < event_.maxCapacity,
+            "Event at maximum capacity"
+        );
+        require(msg.value == event_.ticketPrice, "Incorrect payment amount");
+
+        hasPurchasedTicket[_index][msg.sender] = true;
+
+        isAttendee[_index][msg.sender] = true;
+        attendeeIndex[_index][msg.sender] = eventAttendeesList[_index].length;
+        eventAttendeesList[_index].push(msg.sender);
+        attendeeCount[_index]++;
+        event_.fundsHeld += msg.value;
+
+        emit TicketPurchased(_index, msg.sender, msg.value);
+    }
+
+    function transferTicket(
+        uint256 _index,
+        address _to
+    ) public nonReentrant validEvent(_index) whenNotPaused {
+        require(
+            hasPurchasedTicket[_index][msg.sender],
+            "No ticket to transfer"
+        );
+        require(_to != address(0), "Invalid recipient address");
+        require(_to != msg.sender, "Cannot transfer to yourself");
+        require(
+            !hasPurchasedTicket[_index][_to],
+            "Recipient already has ticket"
+        );
+        require(
+            block.timestamp < events[_index].startDate,
+            "Cannot transfer after event starts"
+        );
+
+        hasPurchasedTicket[_index][msg.sender] = false;
+        hasPurchasedTicket[_index][_to] = true;
+        isAttendee[_index][msg.sender] = false;
+        isAttendee[_index][_to] = true;
+
+        uint256 index = attendeeIndex[_index][msg.sender];
+        eventAttendeesList[_index][index] = _to;
+        attendeeIndex[_index][_to] = index;
+        delete attendeeIndex[_index][msg.sender];
+
+        emit TicketTransferred(_index, msg.sender, _to);
+    }
 }
