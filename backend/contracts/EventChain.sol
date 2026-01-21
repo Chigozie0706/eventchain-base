@@ -389,4 +389,72 @@ contract EventChain is ReentrancyGuard, Ownable {
 
         emit TicketTransferred(_index, msg.sender, _to);
     }
+
+    function cancelEvent(
+        uint256 _index
+    ) public onlyEventOwner(_index) validEvent(_index) whenNotPaused {
+        require(events[_index].isActive, "Event already inactive");
+        events[_index].isActive = false;
+        events[_index].isCanceled = true;
+        emit EventCanceled(_index);
+    }
+
+    function requestRefund(
+        uint256 _index
+    ) public nonReentrant validEvent(_index) whenNotPaused {
+        require(hasPurchasedTicket[_index][msg.sender], "No ticket purchased");
+
+        Event storage event_ = events[_index];
+        uint256 refundAmount = event_.ticketPrice;
+
+        require(
+            event_.fundsHeld >= refundAmount,
+            "Insufficient funds in contract"
+        );
+
+        // Check refund eligibility
+        if (!event_.isCanceled) {
+            if (event_.refundPolicy == RefundPolicy.NO_REFUND) {
+                revert("Refunds not allowed for this event");
+            } else if (
+                event_.refundPolicy == RefundPolicy.REFUND_BEFORE_START
+            ) {
+                require(
+                    block.timestamp < event_.startDate,
+                    "Refund period has ended"
+                );
+            } else if (event_.refundPolicy == RefundPolicy.CUSTOM_BUFFER) {
+                require(
+                    block.timestamp <
+                        event_.startDate - (event_.refundBufferHours * 1 hours),
+                    "Refund buffer period has ended"
+                );
+            }
+        }
+
+        // Process refund
+        hasPurchasedTicket[_index][msg.sender] = false;
+        isAttendee[_index][msg.sender] = false;
+        event_.fundsHeld -= refundAmount;
+        attendeeCount[_index]--;
+
+        // O(1) removal
+        address[] storage attendees = eventAttendeesList[_index];
+        uint256 indexToRemove = attendeeIndex[_index][msg.sender];
+        uint256 lastIndex = attendees.length - 1;
+
+        if (indexToRemove != lastIndex) {
+            address lastAttendee = attendees[lastIndex];
+            attendees[indexToRemove] = lastAttendee;
+            attendeeIndex[_index][lastAttendee] = indexToRemove;
+        }
+
+        attendees.pop();
+        delete attendeeIndex[_index][msg.sender];
+
+        pendingWithdrawals[msg.sender] += refundAmount;
+
+        emit RefundIssued(_index, msg.sender, refundAmount);
+        emit WithdrawalReady(msg.sender, refundAmount);
+    }
 }
