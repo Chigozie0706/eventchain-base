@@ -18,6 +18,6 @@ const _supportedTokens = [
  * @return {object} An object containing the deployed EventChain contract instance.
  */
 module.exports = buildModule("EventChainModule", (m) => {
-  const eventChain = m.contract("EventChain");
+  const eventChain = m.contract("EventChain", [_supportedTokens]);
   return { eventChain };
 });
