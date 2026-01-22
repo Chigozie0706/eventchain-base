@@ -13,6 +13,15 @@ module.exports = {
       viaIR: true, // Enable IR-based compilation to fix "Stack Too Deep"
     },
   },
+
+    etherscan: {
+    enabled: false, // Disable Etherscan verification
+  },
+
+  sourcify: {
+    enabled: true,
+  },
+  
   networks: {
     base_sepolia: {
       url: "https://sepolia.base.org",
