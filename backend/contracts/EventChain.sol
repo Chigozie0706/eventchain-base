@@ -5,7 +5,15 @@ pragma solidity ^0.8.3;
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+interface IERC677 is IERC20 {
+    function transferAndCall(
+        address to,
+        uint value,
+        bytes calldata data
+    ) external returns (bool);
+}
 /**
  * @title EventChain
  * @dev A decentralized event ticketing smart contract that supports multiple tokens.
