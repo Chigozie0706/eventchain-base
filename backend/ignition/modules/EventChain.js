@@ -8,7 +8,8 @@ const { ethers } = require("ethers");
  */
 
 const _supportedTokens = [
-  ethers.getAddress("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
+  ethers.getAddress("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"), // USDC
+  ethers.getAddress("0x4200000000000000000000000000000000000006"), // WETH
 ];
 
 /**
@@ -18,6 +19,6 @@ const _supportedTokens = [
  * @return {object} An object containing the deployed EventChain contract instance.
  */
 module.exports = buildModule("EventChainModule", (m) => {
-  const eventChain = m.contract("EventChain");
+  const eventChain = m.contract("EventChain", [_supportedTokens]);
   return { eventChain };
 });

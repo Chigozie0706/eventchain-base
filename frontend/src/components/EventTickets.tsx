@@ -7,7 +7,7 @@ import { MapPin, Calendar, Flag, DollarSign } from "lucide-react";
 import { toast } from "react-hot-toast";
 import contractABI from "../contract/abi.json";
 
-const CONTRACT_ADDRESS = "0x0012F479332fCf9e458fef35B68b2d15e9411597";
+const CONTRACT_ADDRESS = "0x39765d29F8825c495971D65c1866A0C24Ad6A84a";
 
 interface Event {
   id: string;
@@ -75,7 +75,7 @@ export default function EventTickets() {
           ] || {
             symbol: `${event.paymentToken.slice(
               0,
-              6
+              6,
             )}...${event.paymentToken.slice(-4)}`,
             decimals: 18,
           };
@@ -93,10 +93,10 @@ export default function EventTickets() {
             eventLocation: event.eventLocation,
             isActive: event.isActive,
             ticketPrice: Number(
-              ethers.formatUnits(event.ticketPrice, tokenInfo.decimals)
+              ethers.formatUnits(event.ticketPrice, tokenInfo.decimals),
             ),
             fundsHeld: Number(
-              ethers.formatUnits(event.fundsHeld, tokenInfo.decimals)
+              ethers.formatUnits(event.fundsHeld, tokenInfo.decimals),
             ),
             isCanceled: event.isCanceled,
             fundsReleased: event.fundsReleased,
@@ -129,7 +129,7 @@ export default function EventTickets() {
     } catch (error) {
       toast.dismiss(toastId);
       toast.error(
-        error instanceof Error ? error.message : "Failed to request refund"
+        error instanceof Error ? error.message : "Failed to request refund",
       );
     }
   };
@@ -258,8 +258,8 @@ export default function EventTickets() {
                       {event.isCanceled
                         ? "Event Canceled"
                         : isWriting
-                        ? "Processing..."
-                        : "Request Refund"}
+                          ? "Processing..."
+                          : "Request Refund"}
                     </button>
                   </div>
                 </div>

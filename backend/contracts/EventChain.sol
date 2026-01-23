@@ -1,47 +1,49 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.3;
 
+// Import OpenZeppelin contracts for security and functionality
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
- * @title EventChain - SECURITY FIXED VERSION
- * @dev Key fixes:
- * - Fixed refund buffer validation logic
- * - Added pagination to prevent DoS
- * - Improved withdraw pattern
- * - Added per-event capacity limits
- * - Added event ownership transfer
+ * @title EventChain
+ * @dev A decentralized event ticketing smart contract that supports multiple tokens.
+ * Features include:
+ * - Event creation and management
+ * - Ticket purchasing with supported ERC20 tokens
+ * - Refund functionality
+ * - Secure fund handling
+ * - Event capacity limits
  */
-contract EventChain is ReentrancyGuard, Ownable {
+contract EventChain is ReentrancyGuard {
+    /// @notice Mapping to track supported payment tokens (USDC, WETH, etc.)
+    mapping(address => bool) public supportedTokens;
+
+    /// @notice Maximum values for event parameters to prevent abuse
     uint256 public constant MAX_NAME_LENGTH = 100;
     uint256 public constant MAX_URL_LENGTH = 200;
     uint256 public constant MAX_DETAILS_LENGTH = 1000;
     uint256 public constant MAX_LOCATION_LENGTH = 150;
-    uint256 public constant MAX_TICKET_PRICE = 1e24;
-    uint256 public constant MIN_CAPACITY = 1;
-    uint256 public constant MAX_CAPACITY = 100000;
+    uint256 public constant MAX_TICKET_PRICE = 1e24; // 1M tokens
+    uint256 public constant MAX_ATTENDEES = 5000;
     uint256 public constant MIN_EVENT_DURATION = 1 hours;
-    uint256 public constant MAX_EVENT_DURATION = 365 days;
-    uint256 public constant EMERGENCY_WITHDRAWAL_DELAY = 90 days;
-    uint256 public constant MAX_AGE = 150; // Reasonable maximum age
+    uint256 public constant REFUND_BUFFER = 5 hours;
 
+    /// @notice Contract pause status - emergency stop mechanism
     bool public paused;
 
-    enum RefundPolicy {
-        NO_REFUND,
-        REFUND_BEFORE_START,
-        CUSTOM_BUFFER
+    /**
+     * @dev Constructor to initialize supported tokens.
+     * @param _supportedTokens List of token addresses to be supported for payments.
+     */
+    constructor(address[] memory _supportedTokens) {
+        for (uint256 i = 0; i < _supportedTokens.length; i++) {
+            supportedTokens[_supportedTokens[i]] = true;
+        }
     }
 
-    receive() external payable {
-        revert("Direct MNT transfers not allowed");
-    }
-
-    fallback() external payable {
-        revert("Direct MNT transfers not allowed");
-    }
-
+    /// @notice Structure to store comprehensive event details
     struct Event {
         address owner;
         string eventName;
@@ -55,80 +57,127 @@ contract EventChain is ReentrancyGuard, Ownable {
         bool isActive;
         uint256 ticketPrice;
         uint256 fundsHeld;
-        uint256 minimumAge;
-        uint256 maxCapacity;
         bool isCanceled;
         bool fundsReleased;
-        bool exists;
-        RefundPolicy refundPolicy;
-        uint256 refundBufferHours;
+        address paymentToken;
     }
 
-    mapping(uint256 => Event) public events;
-    uint256 public eventCount;
-    mapping(uint256 => mapping(address => bool)) public isAttendee;
-    mapping(uint256 => address[]) internal eventAttendeesList;
-    mapping(uint256 => uint256) public attendeeCount;
-    mapping(address => uint256[]) internal creatorEventIds;
-    mapping(uint256 => mapping(address => bool)) public hasPurchasedTicket;
-    mapping(uint256 => mapping(address => uint256)) internal attendeeIndex;
-    mapping(address => uint256) public pendingWithdrawals;
+    /// @notice Array of all created events
+    Event[] public events;
 
+    /// @notice Mapping of event ID to list of attendees
+    mapping(uint256 => address[]) internal eventAttendees;
+
+    /// @notice Mapping of creator address to their events
+    mapping(address => Event[]) internal creatorEvents;
+
+    /// @notice Mapping to track if a user has purchased a ticket for an event
+    mapping(uint256 => mapping(address => bool)) public hasPurchasedTicket;
+
+    /// @notice Event emitted when a new event is created
     event EventCreated(
         uint256 indexed eventId,
         address indexed owner,
         string eventName
     );
+
+    /// @notice Event emitted when an event is updated
     event EventUpdated(
         uint256 indexed eventId,
         address indexed owner,
         string eventName
     );
+
+    /// @notice Event emitted when a ticket is purchased
     event TicketPurchased(
         uint256 indexed eventId,
         address indexed buyer,
-        uint256 amount
+        uint256 amount,
+        address paymentToken
     );
+
+    /// @notice Event emitted when an event is canceled
     event EventCanceled(uint256 indexed eventId);
+
+    /// @notice Event emitted when a refund is issued
     event RefundIssued(
         uint256 indexed eventId,
         address indexed user,
         uint256 amount
     );
-    event FundsReleased(uint256 indexed eventId, uint256 amount);
-    event EmergencyWithdrawal(uint256 indexed eventId, uint256 amount);
-    event TicketTransferred(
-        uint256 indexed eventId,
-        address indexed from,
-        address indexed to
-    );
-    event WithdrawalReady(address indexed user, uint256 amount);
 
-    modifier onlyEventOwner(uint256 _index) {
+    /// @notice Event emitted when funds are released to the event owner
+    event FundsReleased(uint256 indexed eventId, uint256 amount);
+
+    /// @dev Modifier to check if the caller is the owner of the event
+    modifier onlyOwner(uint256 _index) {
         require(events[_index].owner == msg.sender, "Not event owner");
         _;
     }
 
+    /// @dev Modifier to validate event exists and is active
     modifier validEvent(uint256 _index) {
-        require(events[_index].exists, "Event doesn't exist");
-        require(events[_index].owner != address(0), "Event owner is zero");
+        require(_index < events.length, "Invalid event");
+        require(events[_index].owner != address(0), "Event doesn't exist");
         _;
     }
 
+    /// @dev Modifier to check if contract is not paused
     modifier whenNotPaused() {
         require(!paused, "Contract paused");
         _;
     }
 
-    constructor() Ownable(msg.sender) {}
-
-    function togglePause() external onlyOwner {
-        paused = !paused;
+    /**
+     * @dev Internal function to add a new supported payment token
+     * @param _token Address of the token to support
+     */
+    function _addSupportedToken(address _token) internal {
+        require(_token != address(0), "Invalid token");
+        supportedTokens[_token] = true;
     }
 
     /**
-     * @notice Create a new event - FIXED VERSION
-     * @dev Fixed refund buffer validation and added capacity parameter
+     * @dev Safe ERC20 transferFrom with success check
+     * @param token ERC20 token interface
+     * @param from Sender address
+     * @param to Recipient address
+     * @param amount Amount to transfer
+     */
+    function _safeTransferFrom(
+        IERC20 token,
+        address from,
+        address to,
+        uint256 amount
+    ) internal {
+        bool success = token.transferFrom(from, to, amount);
+        require(success, "Transfer failed");
+    }
+
+    /**
+     * @dev Safe ERC20 transfer with success check
+     * @param token ERC20 token interface
+     * @param to Recipient address
+     * @param amount Amount to transfer
+     */
+    function _safeTransfer(IERC20 token, address to, uint256 amount) internal {
+        bool success = token.transfer(to, amount);
+        require(success, "Transfer failed");
+    }
+
+    /**
+     * @notice Create a new event with comprehensive details
+     * @dev Creates a new event with all necessary parameters and performs validation
+     * @param _eventName The name of the event (1-100 chars)
+     * @param _eventCardImgUrl Image URL for event display (1-200 chars)
+     * @param _eventDetails Description of the event (1-1000 chars)
+     * @param _startDate Start date of the event (timestamp)
+     * @param _endDate End date of the event (timestamp)
+     * @param _startTime Daily start time of the event
+     * @param _endTime Daily end time of the event
+     * @param _eventLocation Physical or virtual location (1-150 chars)
+     * @param _ticketPrice Price of one ticket (0 < price <= MAX_TICKET_PRICE)
+     * @param _paymentToken Address of the supported payment token
      */
     function createEvent(
         string calldata _eventName,
@@ -140,71 +189,42 @@ contract EventChain is ReentrancyGuard, Ownable {
         uint64 _endTime,
         string calldata _eventLocation,
         uint256 _ticketPrice,
-        uint256 _minimumAge,
-        uint256 _maxCapacity,
-        RefundPolicy _refundPolicy,
-        uint256 _refundBufferHours
+        address _paymentToken
     ) public whenNotPaused {
         // Input validation
         require(
             bytes(_eventName).length > 0 &&
                 bytes(_eventName).length <= MAX_NAME_LENGTH,
-            "Invalid name length"
+            "Invalid name"
         );
         require(
             bytes(_eventCardImgUrl).length > 0 &&
                 bytes(_eventCardImgUrl).length <= MAX_URL_LENGTH,
-            "Invalid URL length"
+            "Invalid URL"
         );
         require(
             bytes(_eventDetails).length > 0 &&
                 bytes(_eventDetails).length <= MAX_DETAILS_LENGTH,
-            "Invalid details length"
+            "Invalid details"
         );
         require(
             bytes(_eventLocation).length > 0 &&
                 bytes(_eventLocation).length <= MAX_LOCATION_LENGTH,
-            "Invalid location length"
+            "Invalid location"
         );
         require(
             _ticketPrice > 0 && _ticketPrice <= MAX_TICKET_PRICE,
-            "Invalid ticket price"
+            "Invalid price"
         );
-        require(_startDate >= block.timestamp, "Start date must be in future");
+        require(_paymentToken != address(0), "Invalid token");
+        require(_startDate >= block.timestamp, "Start date must be future");
         require(
             _endDate >= _startDate + MIN_EVENT_DURATION,
-            "Event duration too short"
+            "Duration too short"
         );
-        require(
-            _endDate <= _startDate + MAX_EVENT_DURATION,
-            "Event duration too long"
-        );
-        require(_minimumAge <= MAX_AGE, "Invalid minimum age");
-        require(
-            _maxCapacity >= MIN_CAPACITY && _maxCapacity <= MAX_CAPACITY,
-            "Invalid capacity"
-        );
-
-        require(
-            _refundPolicy <= RefundPolicy.CUSTOM_BUFFER,
-            "Invalid refund policy"
-        );
-        if (_refundPolicy == RefundPolicy.CUSTOM_BUFFER) {
-            require(
-                _refundBufferHours > 0 && _refundBufferHours <= 720,
-                "Invalid refund buffer"
-            );
-            // FIX: Ensure refund buffer doesn't exceed time until event
-            uint256 timeUntilEvent = _startDate - block.timestamp;
-            require(
-                _refundBufferHours * 1 hours < timeUntilEvent,
-                "Refund buffer exceeds time until event"
-            );
-        }
-
-        uint256 newEventId = eventCount;
-
-        events[newEventId] = Event({
+        require(supportedTokens[_paymentToken], "Unsupported token");
+        // Create new event struct
+        Event memory newEvent = Event({
             owner: msg.sender,
             eventName: _eventName,
             eventCardImgUrl: _eventCardImgUrl,
@@ -218,243 +238,298 @@ contract EventChain is ReentrancyGuard, Ownable {
             isActive: true,
             fundsHeld: 0,
             isCanceled: false,
-            minimumAge: _minimumAge,
-            maxCapacity: _maxCapacity,
             fundsReleased: false,
-            exists: true,
-            refundPolicy: _refundPolicy,
-            refundBufferHours: _refundBufferHours
+            paymentToken: _paymentToken
         });
 
-        creatorEventIds[msg.sender].push(newEventId);
-        eventCount++;
+        events.push(newEvent);
+        creatorEvents[msg.sender].push(newEvent);
 
-        emit EventCreated(newEventId, msg.sender, _eventName);
+        emit EventCreated(events.length - 1, msg.sender, _eventName);
     }
 
     /**
-     * @notice Update event - FIXED to include capacity updates
-     */
-    function updateEvent(
-        uint256 _index,
-        string calldata _eventName,
-        string calldata _eventCardImgUrl,
-        string calldata _eventDetails,
-        string calldata _eventLocation,
-        uint256 _ticketPrice,
-        uint256 _maxCapacity,
-        RefundPolicy _refundPolicy,
-        uint256 _refundBufferHours
-    ) public onlyEventOwner(_index) validEvent(_index) whenNotPaused {
-        Event storage event_ = events[_index];
-
-        require(event_.isActive, "Event is not active");
-        require(block.timestamp < event_.startDate, "Event already started");
-
-        require(
-            bytes(_eventName).length > 0 &&
-                bytes(_eventName).length <= MAX_NAME_LENGTH,
-            "Invalid name length"
-        );
-        require(
-            bytes(_eventCardImgUrl).length > 0 &&
-                bytes(_eventCardImgUrl).length <= MAX_URL_LENGTH,
-            "Invalid URL length"
-        );
-        require(
-            bytes(_eventDetails).length > 0 &&
-                bytes(_eventDetails).length <= MAX_DETAILS_LENGTH,
-            "Invalid details length"
-        );
-        require(
-            bytes(_eventLocation).length > 0 &&
-                bytes(_eventLocation).length <= MAX_LOCATION_LENGTH,
-            "Invalid location length"
-        );
-
-        // Can only change ticket price if no tickets sold
-        if (_ticketPrice != event_.ticketPrice) {
-            require(
-                attendeeCount[_index] == 0,
-                "Cannot change price after tickets sold"
-            );
-            require(
-                _ticketPrice > 0 && _ticketPrice <= MAX_TICKET_PRICE,
-                "Invalid ticket price"
-            );
-            event_.ticketPrice = _ticketPrice;
-        }
-
-        // FIX: Can't reduce capacity below current attendee count
-        if (_maxCapacity != event_.maxCapacity) {
-            require(
-                _maxCapacity >= MIN_CAPACITY && _maxCapacity <= MAX_CAPACITY,
-                "Invalid capacity"
-            );
-            require(
-                _maxCapacity >= attendeeCount[_index],
-                "Capacity below current attendees"
-            );
-            event_.maxCapacity = _maxCapacity;
-        }
-
-        require(
-            _refundPolicy <= RefundPolicy.CUSTOM_BUFFER,
-            "Invalid refund policy"
-        );
-        if (_refundPolicy == RefundPolicy.CUSTOM_BUFFER) {
-            require(
-                _refundBufferHours > 0 && _refundBufferHours <= 720,
-                "Invalid refund buffer"
-            );
-            uint256 timeUntilEvent = event_.startDate - block.timestamp;
-            require(
-                _refundBufferHours * 1 hours < timeUntilEvent,
-                "Refund buffer exceeds time until event"
-            );
-        }
-
-        event_.eventName = _eventName;
-        event_.eventCardImgUrl = _eventCardImgUrl;
-        event_.eventDetails = _eventDetails;
-        event_.eventLocation = _eventLocation;
-        event_.refundPolicy = _refundPolicy;
-        event_.refundBufferHours = _refundBufferHours;
-
-        emit EventUpdated(_index, msg.sender, _eventName);
-    }
-
-    /**
-     * @notice Buy ticket - FIXED to use per-event capacity
+     * @notice Purchase a ticket for a specific event
+     * @dev Handles ticket purchase with ERC20 tokens and prevents double purchases
+     * @param _index The ID of the event to purchase a ticket for
      */
     function buyTicket(
         uint256 _index
-    ) public payable nonReentrant validEvent(_index) whenNotPaused {
+    ) public nonReentrant validEvent(_index) whenNotPaused {
         Event storage event_ = events[_index];
 
+        require(event_.startDate > block.timestamp, "Event expired");
+        require(event_.isActive, "Event inactive");
+        require(!hasPurchasedTicket[_index][msg.sender], "Already purchased");
         require(
-            block.timestamp < event_.startDate,
-            "Event has started or expired"
+            eventAttendees[_index].length < MAX_ATTENDEES,
+            "Event at capacity"
         );
-        require(event_.isActive, "Event is not active");
+
+        uint256 price = event_.ticketPrice;
+
         require(
-            !hasPurchasedTicket[_index][msg.sender],
-            "Ticket already purchased"
+            IERC20(event_.paymentToken).allowance(msg.sender, address(this)) >=
+                price,
+            "Insufficient allowance"
         );
-        require(
-            attendeeCount[_index] < event_.maxCapacity,
-            "Event at maximum capacity"
+
+        _safeTransferFrom(
+            IERC20(event_.paymentToken),
+            msg.sender,
+            address(this),
+            price
         );
-        require(msg.value == event_.ticketPrice, "Incorrect payment amount");
 
         hasPurchasedTicket[_index][msg.sender] = true;
+        eventAttendees[_index].push(msg.sender);
+        event_.fundsHeld += price;
 
-        isAttendee[_index][msg.sender] = true;
-        attendeeIndex[_index][msg.sender] = eventAttendeesList[_index].length;
-        eventAttendeesList[_index].push(msg.sender);
-        attendeeCount[_index]++;
-        event_.fundsHeld += msg.value;
-
-        emit TicketPurchased(_index, msg.sender, msg.value);
+        emit TicketPurchased(_index, msg.sender, price, event_.paymentToken);
     }
 
-    function transferTicket(
-        uint256 _index,
-        address _to
-    ) public nonReentrant validEvent(_index) whenNotPaused {
-        require(
-            hasPurchasedTicket[_index][msg.sender],
-            "No ticket to transfer"
-        );
-        require(_to != address(0), "Invalid recipient address");
-        require(_to != msg.sender, "Cannot transfer to yourself");
-        require(
-            !hasPurchasedTicket[_index][_to],
-            "Recipient already has ticket"
-        );
-        require(
-            block.timestamp < events[_index].startDate,
-            "Cannot transfer after event starts"
-        );
-
+    /**
+     * @dev Internal function to process refunds
+     * @param _index Event ID
+     * @param refundAmount Amount to refund
+     */
+    function _processRefund(uint256 _index, uint256 refundAmount) internal {
         hasPurchasedTicket[_index][msg.sender] = false;
-        hasPurchasedTicket[_index][_to] = true;
-        isAttendee[_index][msg.sender] = false;
-        isAttendee[_index][_to] = true;
+        events[_index].fundsHeld -= refundAmount;
 
-        uint256 index = attendeeIndex[_index][msg.sender];
-        eventAttendeesList[_index][index] = _to;
-        attendeeIndex[_index][_to] = index;
-        delete attendeeIndex[_index][msg.sender];
+        // Remove from attendees list
+        address[] storage attendees = eventAttendees[_index];
+        for (uint256 i = 0; i < attendees.length; i++) {
+            if (attendees[i] == msg.sender) {
+                attendees[i] = attendees[attendees.length - 1];
+                attendees.pop();
+                break;
+            }
+        }
 
-        emit TicketTransferred(_index, msg.sender, _to);
+        _safeTransfer(
+            IERC20(events[_index].paymentToken),
+            msg.sender,
+            refundAmount
+        );
+
+        emit RefundIssued(_index, msg.sender, refundAmount);
     }
 
+    /**
+     * @notice Cancel an event (only callable by event owner)
+     * @dev Marks event as canceled and inactive
+     * @param _index The ID of the event to cancel
+     */
     function cancelEvent(
         uint256 _index
-    ) public onlyEventOwner(_index) validEvent(_index) whenNotPaused {
-        require(events[_index].isActive, "Event already inactive");
+    ) public onlyOwner(_index) validEvent(_index) whenNotPaused {
+        require(events[_index].isActive, "Already canceled");
+
         events[_index].isActive = false;
         events[_index].isCanceled = true;
+
         emit EventCanceled(_index);
     }
 
+    /**
+     * @notice Request a refund for a ticket
+     * @dev Allows refunds for canceled events or before refund buffer period
+     * @param _index The ID of the event to request refund for
+     */
     function requestRefund(
         uint256 _index
     ) public nonReentrant validEvent(_index) whenNotPaused {
         require(hasPurchasedTicket[_index][msg.sender], "No ticket purchased");
-
-        Event storage event_ = events[_index];
-        uint256 refundAmount = event_.ticketPrice;
-
         require(
-            event_.fundsHeld >= refundAmount,
-            "Insufficient funds in contract"
+            events[_index].fundsHeld >= events[_index].ticketPrice,
+            "Insufficient funds"
         );
 
-        // Check refund eligibility
-        if (!event_.isCanceled) {
-            if (event_.refundPolicy == RefundPolicy.NO_REFUND) {
-                revert("Refunds not allowed for this event");
-            } else if (
-                event_.refundPolicy == RefundPolicy.REFUND_BEFORE_START
-            ) {
-                require(
-                    block.timestamp < event_.startDate,
-                    "Refund period has ended"
-                );
-            } else if (event_.refundPolicy == RefundPolicy.CUSTOM_BUFFER) {
-                require(
-                    block.timestamp <
-                        event_.startDate - (event_.refundBufferHours * 1 hours),
-                    "Refund buffer period has ended"
-                );
+        if (!events[_index].isCanceled) {
+            require(
+                block.timestamp < events[_index].startDate - REFUND_BUFFER,
+                "Refund period ended"
+            );
+        }
+
+        uint256 refundAmount = events[_index].ticketPrice;
+        _processRefund(_index, refundAmount);
+    }
+
+    /**
+     * @notice Release collected funds to event owner after event ends
+     * @dev Transfers held funds to event owner and marks funds as released
+     * @param _index The ID of the event to release funds for
+     */
+    function releaseFunds(
+        uint256 _index
+    ) public onlyOwner(_index) nonReentrant {
+        require(_index < events.length, "Invalid event ID");
+        require(
+            block.timestamp > events[_index].endDate,
+            "Event has not ended yet"
+        );
+        require(
+            !events[_index].isCanceled,
+            "Cannot release funds for a canceled event"
+        );
+        require(!events[_index].fundsReleased, "Funds already released");
+
+        uint256 amountToRelease = events[_index].fundsHeld;
+        events[_index].fundsHeld = 0;
+        events[_index].fundsReleased = true;
+
+        require(
+            IERC20(events[_index].paymentToken).transfer(
+                msg.sender,
+                amountToRelease
+            ),
+            "Fund transfer failed"
+        );
+
+        emit FundsReleased(_index, amountToRelease);
+    }
+
+    // View functions for accessing event data
+
+    /**
+     * @notice Get comprehensive event details by ID
+     * @param _index The event ID to query
+     * @return Event details, attendees list, and creator's other events
+     */
+    function getEventById(
+        uint256 _index
+    ) public view returns (Event memory, address[] memory, Event[] memory) {
+        require(_index < events.length, "Event does not exist");
+        return (
+            events[_index],
+            eventAttendees[_index],
+            creatorEvents[events[_index].owner]
+        );
+    }
+
+    /**
+     * @notice Get attendees list for an event
+     * @param _index The event ID to query
+     * @return Array of attendee addresses
+     */
+    function getAttendees(
+        uint256 _index
+    ) public view returns (address[] memory) {
+        require(_index < events.length, "Invalid event ID");
+        return eventAttendees[_index];
+    }
+
+    /**
+     * @notice Get total number of created events
+     * @return Count of all events
+     */
+    function getEventLength() public view returns (uint256) {
+        return events.length;
+    }
+
+    /**
+     * @notice Get all events created by a specific creator.
+     * @param _creator The address of the event creator.
+     * @return An array of events created by the given address.
+     */
+    function getEventsByCreator(
+        address _creator
+    ) public view returns (Event[] memory) {
+        return creatorEvents[_creator];
+    }
+
+    /**
+     * @notice Get all active events.
+     * @return An array of event IDs and corresponding active event details.
+     */
+    function getAllEvents()
+        public
+        view
+        returns (uint256[] memory, Event[] memory)
+    {
+        uint count = 0;
+        for (uint i = 0; i < events.length; i++) {
+            if (events[i].isActive) {
+                count++;
             }
         }
 
-        // Process refund
-        hasPurchasedTicket[_index][msg.sender] = false;
-        isAttendee[_index][msg.sender] = false;
-        event_.fundsHeld -= refundAmount;
-        attendeeCount[_index]--;
+        uint256[] memory indexes = new uint256[](count);
+        Event[] memory activeEvents = new Event[](count);
+        uint j = 0;
+        for (uint i = 0; i < events.length; i++) {
+            if (events[i].isActive) {
+                indexes[j] = i;
+                activeEvents[j] = events[i];
+                j++;
+            }
+        }
+        return (indexes, activeEvents);
+    }
 
-        // O(1) removal
-        address[] storage attendees = eventAttendeesList[_index];
-        uint256 indexToRemove = attendeeIndex[_index][msg.sender];
-        uint256 lastIndex = attendees.length - 1;
+    /**
+     * @notice Get events that the caller has purchased tickets for.
+     * @return An array of event IDs and corresponding event details.
+     */
+    function getUserEvents()
+        public
+        view
+        returns (uint256[] memory, Event[] memory)
+    {
+        uint count = 0;
 
-        if (indexToRemove != lastIndex) {
-            address lastAttendee = attendees[lastIndex];
-            attendees[indexToRemove] = lastAttendee;
-            attendeeIndex[_index][lastAttendee] = indexToRemove;
+        // Count the number of events the user has purchased a ticket for
+        for (uint i = 0; i < events.length; i++) {
+            if (hasPurchasedTicket[i][msg.sender]) {
+                count++;
+            }
         }
 
-        attendees.pop();
-        delete attendeeIndex[_index][msg.sender];
+        // Create arrays with the correct size
+        uint256[] memory eventIds = new uint256[](count);
+        Event[] memory userEvents = new Event[](count);
+        uint j = 0;
 
-        pendingWithdrawals[msg.sender] += refundAmount;
+        // Populate the arrays with the user's events
+        for (uint i = 0; i < events.length; i++) {
+            if (hasPurchasedTicket[i][msg.sender]) {
+                eventIds[j] = i;
+                userEvents[j] = events[i];
+                j++;
+            }
+        }
 
-        emit RefundIssued(_index, msg.sender, refundAmount);
-        emit WithdrawalReady(msg.sender, refundAmount);
+        return (eventIds, userEvents);
+    }
+
+    /**
+     * @notice Get all active events created by the caller.
+     * @return An array of event IDs and corresponding active event details.
+     */
+    function getActiveEventsByCreator()
+        public
+        view
+        returns (uint256[] memory, Event[] memory)
+    {
+        uint count = 0;
+        for (uint i = 0; i < events.length; i++) {
+            if (events[i].owner == msg.sender && events[i].isActive) {
+                count++;
+            }
+        }
+
+        uint256[] memory eventIds = new uint256[](count);
+        Event[] memory activeEvents = new Event[](count);
+        uint j = 0;
+        for (uint i = 0; i < events.length; i++) {
+            if (events[i].owner == msg.sender && events[i].isActive) {
+                eventIds[j] = i;
+                activeEvents[j] = events[i];
+                j++;
+            }
+        }
+        return (eventIds, activeEvents);
     }
 }
