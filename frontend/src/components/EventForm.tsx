@@ -46,7 +46,7 @@ const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID;
 
 if (!projectId) {
   throw new Error(
-    "Missing NEXT_PUBLIC_REOWN_PROJECT_ID in environment variables"
+    "Missing NEXT_PUBLIC_REOWN_PROJECT_ID in environment variables",
   );
 }
 const wagmiAdapter = new WagmiAdapter({
@@ -55,7 +55,7 @@ const wagmiAdapter = new WagmiAdapter({
   ssr: true,
 });
 
-const CONTRACT_ADDRESS = "0xe8D2508aE4Ed4908d31bbc145b5A5Be74a48A264";
+const CONTRACT_ADDRESS = "0xEA3d2096Def0f18df2BD37558698824419897C01";
 
 const tokenOptions = [
   {
@@ -167,7 +167,7 @@ const EventForm = () => {
   const handleChange = (
     e: React.ChangeEvent<
       HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >
+    >,
   ) => {
     setEventData({ ...eventData, [e.target.name]: e.target.value });
   };
@@ -186,12 +186,12 @@ const EventForm = () => {
         !file
       ) {
         throw new Error(
-          "Please fill in all required fields and upload an image"
+          "Please fill in all required fields and upload an image",
         );
       }
 
       const startDateTime = new Date(
-        `${eventData.startDate}T${eventData.startTime}`
+        `${eventData.startDate}T${eventData.startTime}`,
       );
       const endDateTime = new Date(`${eventData.endDate}T${eventData.endTime}`);
 
@@ -230,7 +230,7 @@ const EventForm = () => {
   };
 
   const handleFileChange = (
-    fileOrEvent: File | React.ChangeEvent<HTMLInputElement>
+    fileOrEvent: File | React.ChangeEvent<HTMLInputElement>,
   ) => {
     setError(null);
     let selectedFile: File | null = null;
@@ -266,7 +266,7 @@ const EventForm = () => {
     formData.append("file", file);
     formData.append(
       "pinataMetadata",
-      JSON.stringify({ name: `event-image-${Date.now()}` })
+      JSON.stringify({ name: `event-image-${Date.now()}` }),
     );
 
     const response = await axios.post(
@@ -277,7 +277,7 @@ const EventForm = () => {
           "Content-Type": "multipart/form-data",
           Authorization: `Bearer ${process.env.NEXT_PUBLIC_PINATA_JWT}`,
         },
-      }
+      },
     );
 
     if (response.status !== 200) {
@@ -322,17 +322,17 @@ const EventForm = () => {
 
       // Prepare date/time values
       const startDateTime = new Date(
-        `${eventData.startDate}T${eventData.startTime}`
+        `${eventData.startDate}T${eventData.startTime}`,
       );
       const endDateTime = new Date(`${eventData.endDate}T${eventData.endTime}`);
 
       const startDate = BigInt(Math.floor(startDateTime.getTime() / 1000));
       const endDate = BigInt(Math.floor(endDateTime.getTime() / 1000));
       const startTime = BigInt(
-        startDateTime.getHours() * 3600 + startDateTime.getMinutes() * 60
+        startDateTime.getHours() * 3600 + startDateTime.getMinutes() * 60,
       );
       const endTime = BigInt(
-        endDateTime.getHours() * 3600 + endDateTime.getMinutes() * 60
+        endDateTime.getHours() * 3600 + endDateTime.getMinutes() * 60,
       );
 
       const priceInWei = parseUnits(eventData.eventPrice, 18);

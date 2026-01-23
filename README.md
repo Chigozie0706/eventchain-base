@@ -97,7 +97,7 @@ pnpm run dev   # Runs the Next.js app on http://localhost:3000
 
 | Contract   | Address                                      | Status   |
 | ---------- | -------------------------------------------- | -------- |
-| EventChain | `0xe8D2508aE4Ed4908d31bbc145b5A5Be74a48A264` | **Live** |
+| EventChain | `0xEA3d2096Def0f18df2BD37558698824419897C01` | **Live** |
 
 ### **Recent Transactions**
 

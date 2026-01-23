@@ -35,7 +35,7 @@ export interface Event {
   paymentToken: string;
 }
 
-const CONTRACT_ADDRESS = "0xe8D2508aE4Ed4908d31bbc145b5A5Be74a48A264";
+const CONTRACT_ADDRESS = "0xEA3d2096Def0f18df2BD37558698824419897C01";
 const BASE_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export default function Home() {
@@ -287,7 +287,7 @@ export default function Home() {
         // Encode the event ID for transferAndCall data
         const eventIdData = encodeAbiParameters(
           [{ type: "uint256" }],
-          [eventId]
+          [eventId],
         );
 
         // Combine with Divvi suffix
@@ -340,14 +340,14 @@ export default function Home() {
         const requiredAllowance = requiredAmount;
         console.log(
           "[Ticket] Required allowance:",
-          requiredAllowance.toString()
+          requiredAllowance.toString(),
         );
 
         // First handle token approval if needed
         if (!tokenAllowance || tokenAllowance < requiredAllowance) {
           console.log(
             "[Ticket] Approval needed - current allowance:",
-            tokenAllowance?.toString() || "0"
+            tokenAllowance?.toString() || "0",
           );
           toast.loading("Approving token spend...", { id: toastId });
 
