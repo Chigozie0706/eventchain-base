@@ -34,7 +34,7 @@ interface Event {
   paymentToken: string;
 }
 
-const CONTRACT_ADDRESS = "0x6A48892DCba94f55c4107e3c429F0b85C9A49756";
+const CONTRACT_ADDRESS = "0x9C321cF7d552D7C6e5a67d6f0f278D231203A062";
 
 export default function MyEvents() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -191,7 +191,7 @@ export default function MyEvents() {
     } catch (error) {
       toast.dismiss(toastId);
       toast.error(
-        error instanceof Error ? error.message : "Failed to cancel event"
+        error instanceof Error ? error.message : "Failed to cancel event",
       );
       console.error("Cancel error:", error);
     } finally {
@@ -266,7 +266,7 @@ export default function MyEvents() {
         setCancelingId(null);
       }
     },
-    [connectedAddress, walletClient, refetch]
+    [connectedAddress, walletClient, refetch],
   );
 
   const deleteEvent = async (eventId: number) => {
@@ -293,7 +293,7 @@ export default function MyEvents() {
 
       toast.dismiss(toastId);
       toast.error(
-        error instanceof Error ? error.message : "Failed to delete event"
+        error instanceof Error ? error.message : "Failed to delete event",
       );
     }
   };
